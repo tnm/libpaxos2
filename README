@@ -1,0 +1,2 @@
+This folder is an alternative implementation of libpaxos based on libevent.
+It's incomplete and may not even compile in some situation, don't use it!!!
