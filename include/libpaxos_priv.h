@@ -12,9 +12,10 @@
 
 typedef enum pax_msg_code_e            /* Defines an enumeration type    */
 {
-    promise = 1,
-    prepare = 2,
-    learn = 3,
+    // promise = 1,
+    // prepare = 2,
+    // learn = 3,
+    accept_acks 
     // ...
 } paxos_msg_code;
 
@@ -30,10 +31,30 @@ typedef enum pax_msg_code_e            /* Defines an enumeration type    */
 //     Paxos messages 
 // */
 typedef struct paxos_msg_t {
-    int size; //Size of 'data' in bytes
+    size_t data_size; //Size of 'data' in bytes
     paxos_msg_code type;
     char data[0];
 } paxos_msg;
+
+typedef unsigned int ballot_t;
+typedef long unsigned int iid_t;
+
+typedef struct accept_ack_t {
+    iid_t       iid;
+    ballot_t    ballot;
+    size_t      value_size;
+    char        value[0];
+} accept_ack;
+#define ACCEPT_ACK_SIZE(M) (M->value_size + sizeof(accept_ack))
+
+typedef struct accept_ack_batch_t {
+    short int   acceptor_id;
+    short int   n_of_acks;
+    size_t      data_size;
+    char        data[0];
+} accept_ack_batch;
+#define ACCEPT_ACK_BATCH_SIZE(B) (B->data_size + sizeof(accept_ack_batch))
+
 // #define PAXOS_MSG_SIZE(m) (sizeof(paxos_msg) + m->size)
 // 
 // typedef struct prepare_msg_t {
@@ -76,6 +97,8 @@ typedef struct paxos_msg_t {
 //     int     value_size;
 //     char    value[0];
 // } learn_msg;
+
+
 // 
 // typedef struct learner_sync_msg_t {
 //     int     count;
@@ -99,11 +122,13 @@ typedef struct paxos_msg_t {
 // */
 // #define GET_ACC_INDEX(n) (n & (ACCEPTOR_ARRAY_SIZE-1))
 // 
-// /* 
-//    This is equivalent to n mod LEARNER_ARRAY_SIZE, 
-//    works only if LEARNER_ARRAY_SIZE is a power of 2.
-// */
-// #define GET_LEA_INDEX(n) (n & (LEARNER_ARRAY_SIZE-1))
+/* 
+   This is equivalent to n mod LEARNER_ARRAY_SIZE, 
+   works only if LEARNER_ARRAY_SIZE is a power of 2.
+*/
+#define GET_LEA_INDEX(n) (n & (LEARNER_ARRAY_SIZE-1))
+#define GET_LEA_INSTANCE(I) &learner_state[((I) & (LEARNER_ARRAY_SIZE-1))]
+
 // 
 // 
 // /* 
@@ -139,9 +164,10 @@ void* paxos_normal_malloc(size_t size);
 
 
 /*** MISC MACROS ***/
+
 // Since this lib compiles with -Wextra, unused parameters throw
 // a warning, adding a USELESS_PARAMETER(variable_name) removes the message
-#define USELESS_PARAMETER(V) (V = V);
+#define UNUSED_ARG(V) (V = V);
 
 
 #endif /* _LIBPAXOS_PRIV_H_ */

@@ -2,6 +2,17 @@
 #define _CONFIG_H_
 
 /*** PROTOCOL SETTINGS ***/
+/* 
+    TODO comment
+*/
+#define N_OF_ACCEPTORS  3
+
+/* 
+    TODO comment
+    Paxos     -> ((int)(N_OF_ACCEPTORS/2))+1;
+    FastPaxos -> 1 + (int)((double)(N_OF_ACCEPTORS*2)/3);
+*/
+#define QUORUM (((int)(N_OF_ACCEPTORS/2))+1)
 
 /*** NETWORK SETTINGS ***/
 
@@ -17,6 +28,17 @@
 #define PAXOS_LEARNERS_NET  "239.0.0.1", 6001
 #define PAXOS_ACCEPTORS_NET "239.0.0.1", 6002
 #define PAXOS_PROPOSERS_NET "239.0.0.1", 6003
+
+
+/*** STRUCTURES SETTINGS ***/
+
+/* 
+   LEARNER_ARRAY_SIZE can be any size, to ensure proper
+   buffering it can be set to a multiple of the 
+   PROPOSER_PREEXEC_WIN_SIZE
+   IMPORTANT: This must be a power of 2
+*/
+#define LEARNER_ARRAY_SIZE 512
 
 
 /*** DEBUGGING SETTINGS ***/

@@ -6,12 +6,38 @@
 #include "paxos_udp.h"
 #include "config.h"
 
-static int validate_paxos_msg() {
-    // paxos_msg * pmsg = (paxos_msg*) lear_recv_buffer;
-    // if (pmsg->size != (msg_size - sizeof(paxos_msg))) {
-    //     printf("Invalid paxos packet, size %d does not match packet size %lu\n", pmsg->size, (long unsigned)(msg_size - sizeof(paxos_msg)));
-    // }
-    return -1;
+static int validate_paxos_msg(paxos_msg * m, size_t msg_size) {
+    size_t expected_size = sizeof(paxos_msg);
+    
+    if (m->data_size + sizeof(paxos_msg) != msg_size) {
+        printf("Invalid message, declared size:%lu received size:%u\n", \
+            (m->data_size + sizeof(paxos_msg)), (unsigned int)msg_size);
+        return -1;
+    }
+    
+    switch(m->type) {
+        case accept_acks: {
+            accept_ack_batch * aa = (accept_ack_batch *)m->data;
+            //Acceptor id out of bounds
+            if(aa->acceptor_id < 0 || aa->acceptor_id >= N_OF_ACCEPTORS) {
+                printf("Invalida acceptor id:%d\n", aa->acceptor_id);
+                return -1;
+            }
+            expected_size += ACCEPT_ACK_BATCH_SIZE(aa);
+        }
+        break;
+        
+        default: {
+            printf("Unknow paxos message type:%d\n", m->type);
+            return -1;
+        }
+        
+        if(msg_size != expected_size) {
+            printf("Invalid size for msg_type:%d declared:%u received:%u\n", \
+                m->type, (unsigned int)expected_size, (unsigned int)msg_size);
+        }
+    }
+    return 0;
 }
 
 udp_receiver * udp_receiver_new(char* address_string, int port) {
@@ -86,5 +112,5 @@ int udp_read_next_message(udp_receiver * recv_info) {
         perror("recvfrom");
         return -1;
     }
-    return validate_paxos_msg(recv_info->recv_buffer, msg_size);
+    return validate_paxos_msg((paxos_msg*)recv_info->recv_buffer, msg_size);
 }
