@@ -48,7 +48,7 @@ static udp_receiver * for_learner;
 // Helpers
 /*-------------------------------------------------------------------------*/
 
-void clear_instance_info(inst_info * ii) {
+void lea_clear_instance_info(inst_info * ii) {
     ii->iid = INST_INFO_EMPTY;
     ii->last_update_ballot = 0;
     ii->final_value = NULL;
@@ -61,7 +61,7 @@ void clear_instance_info(inst_info * ii) {
     }
 }
 
-void store_accept_ack(inst_info * ii, short int acceptor_id, accept_ack * aa) {
+void lea_store_accept_ack(inst_info * ii, short int acceptor_id, accept_ack * aa) {
     accept_ack * new_ack = PAX_MALLOC(ACCEPT_ACK_SIZE(aa));
     memcpy(new_ack, aa, ACCEPT_ACK_SIZE(aa));
     ii->acks[acceptor_id] = new_ack;
@@ -72,7 +72,7 @@ void store_accept_ack(inst_info * ii, short int acceptor_id, accept_ack * aa) {
 
 //Returns 0 if the message was discarded because not relevant
 //1 if the state changed, so the quorum check is triggered
-int update_state(inst_info * ii, short int acceptor_id, accept_ack * aa) {
+int lea_update_state(inst_info * ii, short int acceptor_id, accept_ack * aa) {
     //First message for this iid
     if(ii->iid == INST_INFO_EMPTY) {
         LOG(DBG, ("Received first message for instance:%lu\n", aa->iid));
@@ -92,7 +92,7 @@ int update_state(inst_info * ii, short int acceptor_id, accept_ack * aa) {
         LOG(DBG, ("Got first ack for iid:%lu, acceptor:%d\n", \
             ii->iid, acceptor_id));
         //Save this accept_ack
-        store_accept_ack(ii, acceptor_id, aa);
+        lea_store_accept_ack(ii, acceptor_id, aa);
         return 1;
     }
     
@@ -107,12 +107,12 @@ int update_state(inst_info * ii, short int acceptor_id, accept_ack * aa) {
     //Replace the previous ack since the ballot is older
     LOG(DBG, ("Overwriting previous accept_ack for iid:%lu\n", aa->iid));
     PAX_FREE(prev_ack);
-    store_accept_ack(ii, acceptor_id, aa);
+    lea_store_accept_ack(ii, acceptor_id, aa);
     return 1;
 }
 
 //Returns 0 if the instance is not closed yet, 1 otherwise
-int check_quorum(inst_info * ii) {
+int lea_check_quorum(inst_info * ii) {
     size_t i, a_valid_index=-1, count=0;
     accept_ack * curr_ack;
     
@@ -137,7 +137,7 @@ int check_quorum(inst_info * ii) {
     
 }
 
-void deliver_next_closed_instances() {
+void lea_deliver_next_closed() {
     inst_info * ii = GET_LEA_INSTANCE(current_iid + 1);
     accept_ack * aa;
     while(ii->final_value != NULL) {
@@ -148,7 +148,7 @@ void deliver_next_closed_instances() {
         current_iid++;
         
         //Clear the state
-        clear_instance_info(ii);
+        lea_clear_instance_info(ii);
         
         //Go on and try to deliver next
         ii = GET_LEA_INSTANCE(current_iid + 1);
@@ -181,14 +181,14 @@ void handle_accept_ack(short int acceptor_id, accept_ack * aa) {
     //Message is within interesting bounds
     //Update the corresponding record
     inst_info * ii = GET_LEA_INSTANCE(aa->iid);
-    int relevant = update_state(ii, acceptor_id, aa);
+    int relevant = lea_update_state(ii, acceptor_id, aa);
     if(!relevant) {
         LOG(DBG, ("Learner discarding learn for iid:%lu\n", aa->iid));
         return;
     }
 
     //Check if instance can be declared closed
-    int closed = check_quorum(ii);
+    int closed = lea_check_quorum(ii);
     if(!closed) {
         LOG(DBG, ("Not yet a quorum for iid:%lu\n", aa->iid));
         return;
@@ -197,7 +197,7 @@ void handle_accept_ack(short int acceptor_id, accept_ack * aa) {
     //If the closed instance is last delivered + 1
     //Deliver it (and the following if already closed)
     if (aa->iid == highest_iid_delivered+1) {
-        deliver_next_closed_instances(aa->iid);
+        lea_deliver_next_closed(aa->iid);
     }
 }
 
@@ -251,17 +251,17 @@ static void handle_event_newmsg(int sock, short event, void *arg) {
 /*-------------------------------------------------------------------------*/
 // Initialization
 /*-------------------------------------------------------------------------*/
-static int learner_structures_init() {
+static int init_lea_structs() {
     // Clear the state array
     memset(learner_state, 0, (sizeof(inst_info) * LEARNER_ARRAY_SIZE));
     size_t i;
     for(i = 0; i < N_OF_ACCEPTORS; i++) {
-        clear_instance_info(&learner_state[i]);
+        lea_clear_instance_info(&learner_state[i]);
     }
     return 0;
 }
 
-static int learner_network_init() {
+static int init_lea_network() {
     
     // Send buffer for talking to acceptors
     to_acceptors = udp_sendbuf_new(PAXOS_ACCEPTORS_NET);
@@ -284,7 +284,7 @@ static int learner_network_init() {
     return 0;
 }
 
-static void learner_init_failure(char * msg) {
+static void init_lea_failure(char * msg) {
     printf("Learner init error: %s\n", msg);
     pthread_mutex_lock(&ready_lock);
     learner_ready = LEARNER_ERROR;
@@ -292,7 +292,7 @@ static void learner_init_failure(char * msg) {
     pthread_mutex_unlock(&ready_lock);
 }
 
-static void learner_signal_init_complete() {
+static void init_lea_signal_ready() {
     LOG(DBG, ("Learner thread setting status to ready\n")); 
     pthread_mutex_lock(&ready_lock);
     learner_ready = LEARNER_READY;
@@ -300,40 +300,40 @@ static void learner_signal_init_complete() {
     pthread_mutex_unlock(&ready_lock);
 }
 
-static void* start_learner_thread(void* arg) {
+static void* init_learner_thread(void* arg) {
     delfun = (deliver_function) arg;
     if(delfun == NULL) {
-        learner_init_failure("Error in libevent init\n");
+        init_lea_failure("Error in libevent init\n");
         printf("Error NULL callback!\n");
         return NULL;
     }
     
     //Initialization of libevent handle
     if((eb = event_init()) == NULL) {
-        learner_init_failure("Error in libevent init\n");
+        init_lea_failure("Error in libevent init\n");
         return NULL;
     }
     
     //Normal learner initialization, private structures
-    if(learner_structures_init() != 0) {
-        learner_init_failure("Error in learner structures initialization\n");
+    if(init_lea_structs() != 0) {
+        init_lea_failure("Error in learner structures initialization\n");
         return NULL;
     }
     
     //Init sockets and send buffer
-    if(learner_network_init() != 0) {
-        learner_init_failure("Error in learner network init\n");
+    if(init_lea_network() != 0) {
+        init_lea_failure("Error in learner network init\n");
         return NULL;
     }
     
     //Call custom init (i.e. to register additional events)
     if(custom_init != NULL && custom_init() != 0) {
-        learner_init_failure("Error in custom_init_function\n");
+        init_lea_failure("Error in custom_init_function\n");
         return NULL;
     }
     
     // Signal client, learner is ready
-    learner_signal_init_complete();
+    init_lea_signal_ready();
 
     // Start thread that calls event_dispatch()
     // and never returns
@@ -343,7 +343,7 @@ static void* start_learner_thread(void* arg) {
     return NULL;
 }
 
-static int learner_wait_ready() {
+static int init_lea_wait_ready() {
     int status;
     
     pthread_mutex_lock(&ready_lock);
@@ -373,16 +373,15 @@ static int learner_wait_ready() {
 int learner_init(deliver_function f, custom_init_function cif) {
     // Start learner (which starts event_dispatch())
     custom_init = cif;
-    if (pthread_create(&learner_thread, NULL, start_learner_thread, (void*) f) != 0) {
+    if (pthread_create(&learner_thread, NULL, init_learner_thread, (void*) f) != 0) {
         perror("pthread create learner thread");
         return -1;
     }
     LOG(DBG, ("Learner thread started, waiting for ready signal\n"));    
-    if (learner_wait_ready() == LEARNER_ERROR) {
+    if (init_lea_wait_ready() == LEARNER_ERROR) {
         printf("Learner initialization failed!\n");
         return -1;
     }
     LOG(VRB, ("Learner is ready\n"));    
     return 0;
 }
-
