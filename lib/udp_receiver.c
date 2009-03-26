@@ -5,7 +5,6 @@
 
 #include "libpaxos_priv.h"
 #include "paxos_udp.h"
-#include "config.h"
 
 static int validate_paxos_msg(paxos_msg * m, size_t msg_size) {
     size_t expected_size = sizeof(paxos_msg);

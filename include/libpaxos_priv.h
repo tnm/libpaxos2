@@ -4,7 +4,7 @@
 // #include <arpa/inet.h>
 // 
 #include "libpaxos.h"
-#include "config.h"
+#include "paxos_config.h"
 #include "libpaxos_messages.h"
 
 /*
