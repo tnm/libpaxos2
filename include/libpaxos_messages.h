@@ -7,6 +7,9 @@ typedef enum pax_msg_code_e            /* Defines an enumeration type    */
     // promise = 1,
     // prepare = 2,
     // learn = 3,
+    prepare_reqs,
+    prepare_acks,
+    accept_reqs,
     accept_acks 
     // ...
 } paxos_msg_code;
@@ -21,9 +24,6 @@ typedef struct paxos_msg_t {
 /* 
     Paxos messages 
 */
-
-typedef unsigned int ballot_t;
-typedef long unsigned int iid_t;
 
 typedef struct accept_ack_t {
     iid_t       iid;
@@ -40,3 +40,12 @@ typedef struct accept_ack_batch_t {
     char        data[0];
 } accept_ack_batch;
 #define ACCEPT_ACK_BATCH_SIZE(B) (B->data_size + sizeof(accept_ack_batch))
+
+typedef struct accept_req_batch_t {
+    
+} accept_req_batch;
+
+typedef struct prepare_req_batch_t {
+    
+} prepare_req_batch;
+

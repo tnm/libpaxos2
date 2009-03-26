@@ -44,6 +44,9 @@ udp_send_buffer * udp_sendbuf_new(char* address_string, int port) {
         perror("fcntl2");
         return NULL;
     }
+    
+    LOG(DBG, ("Socket %d created for address %s:%d (send mode)\n", sb->sock, address_string, port));
+
 
     return sb;
 }

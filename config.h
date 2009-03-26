@@ -8,7 +8,26 @@
 #define N_OF_ACCEPTORS  3
 
 /* 
-    TODO comment
+    If ACCEPTOR_UPDATE_ON_DELIVER is defined, the acceptor is also a learner.
+    Delivered values are written in stable storage (overwriting the status
+    for this acceptor if any).
+    This makes recovery and catch-up easier in some situations.
+    Undefine to disable.
+*/
+// #define ACCEPTOR_UPDATE_ON_DELIVER
+
+
+/*
+    Periodically (every ACCEPTOR_REPEAT_INTERVAL seconds) the acceptor
+    repeats the latest (by instance id) accept received. 
+    This is useful to keep the learners updated in very low-traffic situations
+*/
+#define ACCEPTOR_REPEAT_INTERVAL 5
+
+/* 
+    Rule for calculating whether the number of accept_ack messages
+    (phase 2b of the protocol) is sufficient to declare the instance
+    closed and deliver the corresponding value.
     Paxos     -> ((int)(N_OF_ACCEPTORS/2))+1;
     FastPaxos -> 1 + (int)((double)(N_OF_ACCEPTORS*2)/3);
 */

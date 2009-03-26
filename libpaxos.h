@@ -2,6 +2,11 @@
 #define _LIBPAXOS_H_
 #include <sys/types.h>
 
+/* 
+    TODO comment
+*/
+typedef unsigned int ballot_t;
+typedef long unsigned int iid_t;
 
 // Type for function passed to the learner
 // Example void my_deliver_fun(char * value, size_t size, int iid, int ballot, int proposer)
@@ -9,6 +14,7 @@ typedef void (* deliver_function)(char*, size_t, int, int, int);
 
 // Type for function passed to the learner, 
 // called by learner thread after it's normal initialization
+// Example int my_custom_init()
 typedef int (* custom_init_function)(void);
 
 
@@ -29,6 +35,11 @@ typedef int (* custom_init_function)(void);
 */
 int learner_init(deliver_function f, custom_init_function cif);
 
+/*
+    Starts an acceptor and returns when the initialization is complete.
+    Return value is 0 if successful
+*/
+int acceptor_init();
 
 // /*
 //     (MTU) - 8 (multicast header) - 32 (biggest paxos header)

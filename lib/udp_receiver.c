@@ -1,6 +1,7 @@
 #include <stdlib.h>
 #include <memory.h>
 #include <stdio.h>
+#include <unistd.h>
 
 #include "libpaxos_priv.h"
 #include "paxos_udp.h"
@@ -55,7 +56,7 @@ udp_receiver * udp_receiver_new(char* address_string, int port) {
         perror("receiver socket");
         return NULL;
     }
-
+    
     /* Set to reuse address */	
     int activate = 1;
     if (setsockopt(rec->sock, SOL_SOCKET, SO_REUSEADDR, &activate, sizeof(int)) != 0) {
@@ -99,8 +100,22 @@ udp_receiver * udp_receiver_new(char* address_string, int port) {
         perror("fcntl2");
         return NULL;
     }
+    LOG(DBG, ("Socket %d created for address %s:%d (receive mode)\n", rec->sock, address_string, port));
 
     return rec;
+}
+
+int udp_receiver_destroy(udp_receiver * rec) {
+    int ret = 0;
+    if (close(rec->sock) != 0) {
+        printf("Error closing socket\n");
+        perror("close");
+        ret = -1;
+    }
+    LOG(DBG, ("Socket %d closed\n", rec->sock));
+
+    PAX_FREE(rec);
+    return ret;
 }
 
 

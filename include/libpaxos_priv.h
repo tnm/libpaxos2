@@ -7,6 +7,12 @@
 #include "config.h"
 #include "libpaxos_messages.h"
 
+/*
+    Debug functions, used internally for testing and debug
+*/
+//Suspends the learner, cancelling its events, 
+// but leaves the underlying libevent loop running.
+void learner_suspend();
 
 // #define PAXOS_MSG_SIZE(m) (sizeof(paxos_msg) + m->size)
 // 

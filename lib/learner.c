@@ -48,7 +48,7 @@ static udp_receiver * for_learner;
 // Helpers
 /*-------------------------------------------------------------------------*/
 
-void lea_clear_instance_info(inst_info * ii) {
+static void lea_clear_instance_info(inst_info * ii) {
     ii->iid = INST_INFO_EMPTY;
     ii->last_update_ballot = 0;
     ii->final_value = NULL;
@@ -61,7 +61,7 @@ void lea_clear_instance_info(inst_info * ii) {
     }
 }
 
-void lea_store_accept_ack(inst_info * ii, short int acceptor_id, accept_ack * aa) {
+static void lea_store_accept_ack(inst_info * ii, short int acceptor_id, accept_ack * aa) {
     accept_ack * new_ack = PAX_MALLOC(ACCEPT_ACK_SIZE(aa));
     memcpy(new_ack, aa, ACCEPT_ACK_SIZE(aa));
     ii->acks[acceptor_id] = new_ack;
@@ -72,7 +72,7 @@ void lea_store_accept_ack(inst_info * ii, short int acceptor_id, accept_ack * aa
 
 //Returns 0 if the message was discarded because not relevant
 //1 if the state changed, so the quorum check is triggered
-int lea_update_state(inst_info * ii, short int acceptor_id, accept_ack * aa) {
+static int lea_update_state(inst_info * ii, short int acceptor_id, accept_ack * aa) {
     //First message for this iid
     if(ii->iid == INST_INFO_EMPTY) {
         LOG(DBG, ("Received first message for instance:%lu\n", aa->iid));
@@ -112,7 +112,7 @@ int lea_update_state(inst_info * ii, short int acceptor_id, accept_ack * aa) {
 }
 
 //Returns 0 if the instance is not closed yet, 1 otherwise
-int lea_check_quorum(inst_info * ii) {
+static int lea_check_quorum(inst_info * ii) {
     size_t i, a_valid_index=-1, count=0;
     accept_ack * curr_ack;
     
@@ -137,7 +137,7 @@ int lea_check_quorum(inst_info * ii) {
     
 }
 
-void lea_deliver_next_closed() {
+static void lea_deliver_next_closed() {
     inst_info * ii = GET_LEA_INSTANCE(current_iid + 1);
     accept_ack * aa;
     while(ii->final_value != NULL) {
@@ -160,7 +160,7 @@ void lea_deliver_next_closed() {
 // Event handlers
 /*-------------------------------------------------------------------------*/
 
-void handle_accept_ack(short int acceptor_id, accept_ack * aa) {
+static void handle_accept_ack(short int acceptor_id, accept_ack * aa) {
     //Keep track of highest seen instance id
     if(aa->iid > highest_iid_seen) {
         highest_iid_seen = aa->iid;
@@ -202,7 +202,7 @@ void handle_accept_ack(short int acceptor_id, accept_ack * aa) {
 }
 
 //Iterate over the accept_ack inside an accept_ack_batch
-void handle_accept_ack_batch(accept_ack_batch* aab) {
+static void handle_accept_ack_batch(accept_ack_batch* aab) {
     size_t data_offset;
     accept_ack * aa;
     
@@ -219,7 +219,7 @@ void handle_accept_ack_batch(accept_ack_batch* aab) {
     assert(data_offset == aab->data_size);
 }
 
-static void handle_event_newmsg(int sock, short event, void *arg) {
+static void lea_handle_newmsg(int sock, short event, void *arg) {
     //Make the compiler happy!
     UNUSED_ARG(sock);
     UNUSED_ARG(event);
@@ -276,7 +276,7 @@ static int init_lea_network() {
         printf("Error creating learner network receiver\n");
         return LEARNER_ERROR;
     }
-    event_set(&learner_msg_event, for_learner->sock, EV_READ|EV_PERSIST, handle_event_newmsg, NULL);
+    event_set(&learner_msg_event, for_learner->sock, EV_READ|EV_PERSIST, lea_handle_newmsg, NULL);
     event_add(&learner_msg_event, NULL);
     
     //...
@@ -384,4 +384,17 @@ int learner_init(deliver_function f, custom_init_function cif) {
     }
     LOG(VRB, ("Learner is ready\n"));    
     return 0;
+}
+
+void learner_suspend() {
+    //Remove active events
+    event_del(&learner_msg_event);
+    //Close socket
+    udp_receiver_destroy(for_learner);
+    for_learner = NULL;
+    
+    //Remove timers
+    //...
+    
+    LOG(VRB, ("Learner events suspended!\n"));
 }
