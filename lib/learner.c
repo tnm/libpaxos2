@@ -49,6 +49,7 @@ static udp_receiver * for_learner;
 /*-------------------------------------------------------------------------*/
 
 static void lea_clear_instance_info(inst_info * ii) {
+    //Reset all fields and free stored messages
     ii->iid = INST_INFO_EMPTY;
     ii->last_update_ballot = 0;
     ii->final_value = NULL;
@@ -64,6 +65,7 @@ static void lea_clear_instance_info(inst_info * ii) {
 static void lea_store_accept_ack(inst_info * ii, short int acceptor_id, accept_ack * aa) {
     accept_ack * new_ack = PAX_MALLOC(ACCEPT_ACK_SIZE(aa));
     memcpy(new_ack, aa, ACCEPT_ACK_SIZE(aa));
+    //Store message at appropriate index (acceptor_id)
     ii->acks[acceptor_id] = new_ack;
 
     //Keep track of most recent update
@@ -134,13 +136,16 @@ static int lea_check_quorum(inst_info * ii) {
     
     //No quorum yet...
     return 0;
-    
 }
 
 static void lea_deliver_next_closed() {
+    //Get next instance (last delivered + 1)
     inst_info * ii = GET_LEA_INSTANCE(current_iid + 1);
     accept_ack * aa;
+    
+    //If closed deliver it and all next closed
     while(ii->final_value != NULL) {
+        assert(ii->iid == (current_iid + 1));
         aa = ii->final_value;
         
         //Deliver the value trough callback
@@ -210,6 +215,7 @@ static void handle_accept_ack_batch(accept_ack_batch* aab) {
     aa = (accept_ack*) &aab->data[data_offset];
 
     short int i;
+    //Iterate over accept_ack messages in batch
     for(i = 0; i < aab->n_of_acks; i++) {
         handle_accept_ack(aab->acceptor_id, aa);
         data_offset += ACCEPT_ACK_SIZE(aa);
@@ -226,7 +232,8 @@ static void lea_handle_newmsg(int sock, short event, void *arg) {
     UNUSED_ARG(arg);
     
     assert(sock == for_learner->sock);
-    
+
+    //Read and validate next message from socket
     int valid = udp_read_next_message(for_learner);
     
     if (valid < 0) {
@@ -279,13 +286,15 @@ static int init_lea_network() {
     event_set(&learner_msg_event, for_learner->sock, EV_READ|EV_PERSIST, lea_handle_newmsg, NULL);
     event_add(&learner_msg_event, NULL);
     
-    //...
-    
     return 0;
 }
 
 static void init_lea_failure(char * msg) {
+    //Init failed for some reason
     printf("Learner init error: %s\n", msg);
+    
+    //Set status to error and wake up 
+    //the thread that called learner_init
     pthread_mutex_lock(&ready_lock);
     learner_ready = LEARNER_ERROR;
     pthread_cond_signal(&ready_cond);
@@ -293,6 +302,8 @@ static void init_lea_failure(char * msg) {
 }
 
 static void init_lea_signal_ready() {
+    //Init completed successfully, wake up
+    //the thread that called learner_init
     LOG(DBG, ("Learner thread setting status to ready\n")); 
     pthread_mutex_lock(&ready_lock);
     learner_ready = LEARNER_READY;
@@ -301,6 +312,8 @@ static void init_lea_signal_ready() {
 }
 
 static void* init_learner_thread(void* arg) {
+    //The deliver callback cannot be null
+    //(why starting a learner otherwise?)
     delfun = (deliver_function) arg;
     if(delfun == NULL) {
         init_lea_failure("Error in libevent init\n");
@@ -353,17 +366,18 @@ static int init_lea_wait_ready() {
         status = learner_ready;
 
         if(status == LEARNER_STARTING) {
-            //Not ready yet, keep waiting
+        //Not ready yet, keep waiting
             continue;            
-        }
-        
+        } else {
         //Status changed
-        if (status != LEARNER_READY && status != LEARNER_ERROR) {
-            //Unknow status
-            printf("Unknow learner status: %d\n", status);
-            status = LEARNER_ERROR;
+            break;
         }
-        break;
+    }
+    
+    //Check that status is a valid value
+    if (status != LEARNER_READY && status != LEARNER_ERROR) {
+        printf("Unknow learner status: %d\n", status);
+        status = LEARNER_ERROR;
     }
     
     pthread_mutex_unlock(&ready_lock);
@@ -377,11 +391,14 @@ int learner_init(deliver_function f, custom_init_function cif) {
         perror("pthread create learner thread");
         return -1;
     }
+    
+    //Wait until initialization completed
     LOG(DBG, ("Learner thread started, waiting for ready signal\n"));    
     if (init_lea_wait_ready() == LEARNER_ERROR) {
         printf("Learner initialization failed!\n");
         return -1;
     }
+    
     LOG(VRB, ("Learner is ready\n"));    
     return 0;
 }
@@ -392,9 +409,6 @@ void learner_suspend() {
     //Close socket
     udp_receiver_destroy(for_learner);
     for_learner = NULL;
-    
-    //Remove timers
-    //...
-    
+        
     LOG(VRB, ("Learner events suspended!\n"));
 }
