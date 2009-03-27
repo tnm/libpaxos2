@@ -38,8 +38,20 @@ int learner_init(deliver_function f, custom_init_function cif);
 /*
     Starts an acceptor and returns when the initialization is complete.
     Return value is 0 if successful
+    acceptor_id -> Must be in the range [0...(N_OF_ACCEPTORS-1)]
 */
-int acceptor_init();
+int acceptor_init(int acceptor_id);
+
+/*
+    Starts an acceptor that instead of starting clean
+    tries to recover from an existing db.
+    Return value is 0 if successful
+*/
+int acceptor_init_recover(int acceptor_id);
+
+//TODO should delegate close to libevent thread
+int acceptor_exit();
+
 
 // /*
 //     (MTU) - 8 (multicast header) - 32 (biggest paxos header)

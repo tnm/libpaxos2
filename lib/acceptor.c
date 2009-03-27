@@ -7,8 +7,11 @@
 #include "libpaxos.h"
 #include "libpaxos_priv.h"
 #include "paxos_udp.h"
+#include "acceptor_stable_storage.h"
 
 #define ACCEPTOR_ERROR (-1)
+
+int this_acceptor_id = -1;
 
 static udp_send_buffer * to_proposers;
 static udp_send_buffer * to_learners;
@@ -159,7 +162,15 @@ init_acc_timers() {
     return 0;
 }
 
+static int
+init_acc_stable_storage() {
+    return stablestorage_init(this_acceptor_id);
+}
+
 static int init_acceptor() {
+    //This is invoked by the learner thread
+    //after it's normal initialization
+
 #ifdef ACCEPTOR_UPDATE_ON_DELIVER
     //Keep the learnern running as normal
     //Will deliver values when decided
@@ -171,25 +182,56 @@ static int init_acceptor() {
     learner_suspend();
 #endif
     
+    //Add network events and prepare send buffer
     if(init_acc_network() != 0) {
         printf("Acceptor network init failed\n");
         return -1;
     }
 
+    //Add additional timers to libevent loop
     if(init_acc_timers() != 0){
         printf("Acceptor timers init failed\n");
         return -1;
-        
+    }
+    
+    //Initialize BDB 
+    if(init_acc_stable_storage() != 0) {
+        printf("Acceptor stable storage init failed\n");
+        return -1;
     }
     return 0;
 }
 
-int acceptor_init() {
+int acceptor_init(int acceptor_id) {
+    
+    //Check id validity
+    if(acceptor_id < 0 || acceptor_id >= N_OF_ACCEPTORS) {
+        printf("Invalid acceptor id:%d\n", acceptor_id);
+        return -1;
+    }    
+    this_acceptor_id = acceptor_id;
+    LOG(VRB, ("Acceptor %d starting...\n", this_acceptor_id));
+    
+    //Starts a learner with a custom init function
+    //Learner's functionalities can be shut down
     if (learner_init(acc_deliver_callback, init_acceptor) != 0) {
         printf("Could not start the learner!\n");
         return -1;
     }
     
     LOG(VRB, ("Acceptor is ready\n"));
+    return 0;
+}
+
+int acceptor_init_recover(int acceptor_id) {
+    //Set recovery mode then start normally
+    stablestorage_do_recovery();
+    return acceptor_init(acceptor_id);
+}
+
+int acceptor_exit() {
+    if (stablestorage_shutdown() != 0) {
+        printf("stablestorage shutdown failed!\n");
+    }
     return 0;
 }

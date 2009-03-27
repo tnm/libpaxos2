@@ -304,7 +304,7 @@ static void init_lea_failure(char * msg) {
 static void init_lea_signal_ready() {
     //Init completed successfully, wake up
     //the thread that called learner_init
-    LOG(DBG, ("Learner thread setting status to ready\n")); 
+    LOG(DBG, ("Learner thread setting status to ready\n"));
     pthread_mutex_lock(&ready_lock);
     learner_ready = LEARNER_READY;
     pthread_cond_signal(&ready_cond);
@@ -343,6 +343,8 @@ static void* init_learner_thread(void* arg) {
     if(custom_init != NULL && custom_init() != 0) {
         init_lea_failure("Error in custom_init_function\n");
         return NULL;
+    } else {
+        LOG(DBG, ("Custom init completed\n"));
     }
     
     // Signal client, learner is ready

@@ -33,6 +33,35 @@
 */
 #define QUORUM (((int)(N_OF_ACCEPTORS/2))+1)
 
+
+/*** ACCEPTORS DB SETTINGS ***/
+
+/*
+    Setting for how 'strict' the durability of acceptors should be.
+    DB_LOG_INMEMORY: Transactional Data Store (write, in-memory logging)
+    DB_TXN_NOSYNC: Transactional Data Store (write, no-sync on commit)
+    DB_TXN_WRITE_NOSYNC: Transactional Data Store (write, write-no-sync on commit)
+    0: Transactional Data Store (write, sync on commit)
+*/
+#define BDB_TX_MODE 0
+
+/*
+    Path for creating acceptors' BDB file
+    Must fit in 512 chars
+    %d is replaced by 'acceptor_id'
+*/
+#define ACCEPTOR_DB_PATH "/tmp/acceptor_%d", acceptor_id
+#define ACCEPTOR_DB_FNAME "acc_db_%d.bdb", acceptor_id
+
+/*
+    Access method for acceptors' DB
+    DB_BTREE and DB_RECNO only, other methods
+    requires additional configuration and do not fit well
+*/
+// #define ACCEPTOR_ACCESS_METHOD DB_BTREE
+#define ACCEPTOR_ACCESS_METHOD DB_RECNO
+
+
 /*** NETWORK SETTINGS ***/
 
 /* 

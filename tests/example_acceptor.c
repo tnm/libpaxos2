@@ -4,9 +4,17 @@
 
 #include "libpaxos.h"
 
+void handle_cltr_c (int sig) {
+	printf("Caught signal %d\n", sig);
+    acceptor_exit();
+    exit(0);
+}
 
 int main (int argc, char const *argv[]) {
-    if (acceptor_init() != 0) {
+
+    signal(SIGINT, handle_cltr_c);
+    
+    if (acceptor_init(0) != 0) {
         printf("Could not start the acceptor!\n");
         exit(1);
     }
