@@ -281,7 +281,7 @@ static void handle_accept_ack_batch(accept_ack_batch* aab) {
 
     short int i;
     //Iterate over accept_ack messages in batch
-    for(i = 0; i < aab->n_of_acks; i++) {
+    for(i = 0; i < aab->count; i++) {
         handle_accept_ack(aab->acceptor_id, aa);
         data_offset += ACCEPT_ACK_SIZE(aa);
         aa = (accept_ack*) &aab->data[data_offset];

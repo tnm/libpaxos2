@@ -24,6 +24,7 @@ typedef struct paxos_msg_t {
 typedef struct accept_ack_t {
     iid_t       iid;
     ballot_t    ballot;
+    ballot_t    value_ballot;
     short int   is_final;
     size_t      value_size;
     char        value[0];
@@ -32,7 +33,7 @@ typedef struct accept_ack_t {
 
 typedef struct accept_ack_batch_t {
     short int   acceptor_id;
-    short int   n_of_acks;
+    short int   count;
     char        data[0];
 } accept_ack_batch;
 // #define ACCEPT_ACK_BATCH_SIZE(B) (B->data_size + sizeof(accept_ack_batch))
@@ -51,9 +52,32 @@ typedef struct accept_req_batch_t {
     char data[0];
 } accept_req_batch;
 
+typedef struct prepare_req_t {
+    iid_t iid;
+    ballot_t ballot;
+} prepare_req;
+#define PREPARE_REQ_SIZE(M) (sizeof(prepare_req))
+
 typedef struct prepare_req_batch_t {
-    
+    short int count;
+    short int proposer_id;
+    prepare_req prepares[0];
 } prepare_req_batch;
+#define PREPARE_REQ_BATCH_SIZE(M) (sizeof(prepare_req_batch) + (M->count*sizeof(prepare_req)))
+
+typedef struct prepare_ack_t {
+    ballot_t ballot;
+    ballot_t value_ballot;
+    size_t value_size;
+    char value[0];
+} prepare_ack;
+#define PREPARE_ACK_SIZE(M) (M->value_size + sizeof(prepare_ack)) 
+
+typedef struct prepare_ack_batch_t {
+    short int acceptor_id;
+    short int count;
+    char data[0];
+} prepare_ack_batch;
 
 typedef struct repeat_req_batch_t {
     short int count;

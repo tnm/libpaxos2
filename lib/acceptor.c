@@ -27,25 +27,25 @@ static iid_t highest_accepted_iid = 0;
 /*-------------------------------------------------------------------------*/
 // Helpers
 /*-------------------------------------------------------------------------*/
+
 //Given an accept request message and the current record
 // will update the record if the request is legal
-// Return 0 for no changes, 1 for update applied
-static int
-acc_apply_accept(accept_req * ar, acceptor_record * rec){
-    int result;
+// Return NULL for no changes, the new record for update applied
+static acceptor_record *
+acc_apply_accept(accept_req * ar, acceptor_record * rec) {
     //We already have a more recent ballot
-    if (rec != NULL && rec->ballot <= ar->ballot) {
+    if (rec != NULL && rec->ballot >= ar->ballot) {
         LOG(DBG, ("Accept for iid:%lu dropped (ballots curr:%u recv:%u)\n", 
             ar->iid, rec->ballot, ar->ballot));
-        return 0;
+        return NULL;
     }
     
     //Record not found or smaller ballot
     // in both cases overwrite and store
     LOG(DBG, ("Accepting for iid:%lu (ballot:%u)\n", 
-        ar->iid, ar->ballot));    
-    result = stablestorage_update_record(ar);
-    assert(result == 0);
+        ar->iid, ar->ballot));
+    
+    rec = stablestorage_save_accept(ar);
     
     //Keep track of highest accepted for retransmission
     if(ar->iid > highest_accepted_iid) {
@@ -53,21 +53,51 @@ acc_apply_accept(accept_req * ar, acceptor_record * rec){
         LOG(DBG, ("Highest accepted is now iid:%lu\n", 
             highest_accepted_iid));
     }
-    return 1;
+    return rec;
 }
+//Given a prepare (phase 1a) request message and the c
+// corresponding record, will update if the request is valid
+// Return NULL for no changes, the new record for update applied
+
+static acceptor_record *
+acc_apply_prepare(prepare_req * pr, acceptor_record * rec) {
+    //We already have a more recent ballot
+    if (rec != NULL && rec->ballot >= pr->ballot) {
+        LOG(DBG, ("Prepare request for iid:%lu dropped (ballots curr:%u recv:%u)\n", 
+            pr->iid, rec->ballot, pr->ballot));
+        return NULL;
+    }
+    
+    //Stored value is final, the instance is closed already
+    if (rec != NULL && rec->is_final) {
+        LOG(DBG, ("Prepare request for iid:%lu dropped \
+            (stored value is final)\n", pr->iid));
+        return NULL;
+    }
+    
+    //Record not found or smaller ballot
+    // in both cases overwrite and store
+    LOG(DBG, ("Prepare request is valid for iid:%lu (ballot:%u)\n", 
+        pr->iid, pr->ballot));
+
+    rec = stablestorage_save_prepare(pr, rec);
+
+    return rec;
+}
+
 
 static void
 acc_retransmit_latest_accept() {
     
     acceptor_record * rec;
     
+    //Fetch the highest instance accepted
     sendbuf_clear(to_learners, accept_acks);
-    
     stablestorage_tx_begin();
-    
     rec = stablestorage_get_record(highest_accepted_iid);
-    sendbuf_add_accept_ack(to_learners, rec);
     
+    //And retransmit it to learners
+    sendbuf_add_accept_ack(to_learners, rec);    
     stablestorage_tx_end();
     
     sendbuf_flush(to_learners);
@@ -102,7 +132,37 @@ void handle_prepare_req_batch(prepare_req_batch* prb) {
 //Received a batch of prepare requests (phase 1a)
 // may answer with multiple messages, before sending each one
 // local changes must be made persistent.
-//TODO
+    
+    LOG(DBG, ("Handling prepare for %d instances\n", prb->count));
+
+    //Create empty prepare_ack_batch in buffer
+    sendbuf_clear(to_learners, prepare_acks);
+
+    //Wrap changes in a  transaction
+    stablestorage_tx_begin();
+    
+    short int i;
+    acceptor_record * rec;
+    prepare_req * pr;
+
+    for(i = 0; i < prb->count; i++) {
+        pr = &prb->prepares[i];
+        
+        //Retrieve correspondin record
+        rec = stablestorage_get_record(pr->iid);
+        //Try to apply prepare
+        rec = acc_apply_prepare(pr, rec);
+        //If accepted, send accept_ack
+        if(rec != NULL) {
+            sendbuf_add_prepare_ack(to_learners, rec);
+        }
+
+    }
+    
+    stablestorage_tx_end();
+    
+    //Flush if dirty flag is set
+    sendbuf_flush(to_learners);
 
 }
 
@@ -118,7 +178,7 @@ void handle_accept_req_batch(accept_req_batch* arb) {
     //Wrap in a transaction
     stablestorage_tx_begin();
     
-    short int i, accepted;
+    short int i;
     size_t data_offset = 0;
     accept_req * ar;
     acceptor_record * rec;
@@ -130,9 +190,9 @@ void handle_accept_req_batch(accept_req_batch* arb) {
         //Retrieve correspondin record
         rec = stablestorage_get_record(ar->iid);
         //Try to apply accept
-        accepted = acc_apply_accept(ar, rec);
+        rec = acc_apply_accept(ar, rec);
         //If accepted, send accept_ack
-        if(accepted) {
+        if(rec != NULL) {
             sendbuf_add_accept_ack(to_learners, rec);
         }
 

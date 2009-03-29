@@ -210,13 +210,15 @@ stablestorage_get_record(iid_t iid) {
     return record_buffer;
 }
 
-int stablestorage_update_record(accept_req * ar) {
+acceptor_record * 
+stablestorage_save_accept(accept_req * ar) {
     int flags, result;
     DBT dbkey, dbdata;
     
     //Store as acceptor_record (== accept_ack)
     record_buffer->iid = ar->iid;
     record_buffer->ballot = ar->ballot;
+    record_buffer->value_ballot = ar->ballot;
     record_buffer->is_final = 0;
     record_buffer->value_size = ar->value_size;
     memcpy(record_buffer->value, ar->value, ar->value_size);
@@ -238,6 +240,48 @@ int stablestorage_update_record(accept_req * ar) {
         &dbkey, 
         &dbdata, 
         0);
+
+    assert(result == 0);    
+    return record_buffer;
+}
+
+acceptor_record * 
+stablestorage_save_prepare(prepare_req * pr, acceptor_record * rec) {
+    int flags, result;
+    DBT dbkey, dbdata;
+
+    if (rec == NULL) {
+        //Record does not exist yet
+        rec = record_buffer;
+        rec->iid = pr->iid;
+        rec->ballot = pr->ballot;
+        rec->value_ballot = 0;
+        rec->is_final = 0;
+        rec->value_size = 0;
+    } else {
+        //Record exists, just update the ballot
+        rec->ballot = pr->ballot;
+    }
     
-    return result;
+    memset(&dbkey, 0, sizeof(DBT));
+    memset(&dbdata, 0, sizeof(DBT));
+
+    //Key is iid
+    dbkey.data = &pr->iid;
+    dbkey.size = sizeof(iid_t);
+        
+    //Data is our buffer
+    dbdata.data = record_buffer;
+    dbdata.size = ACCEPT_ACK_SIZE(record_buffer);
+    
+    flags = 0;
+    result = dbp->put(dbp, 
+        txn, 
+        &dbkey, 
+        &dbdata, 
+        0);
+        
+    assert(result == 0);
+    return record_buffer;
+    
 }

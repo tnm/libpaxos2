@@ -2,8 +2,6 @@
 #include <memory.h>
 #include <stdio.h>
 
-
-
 #include "libpaxos_priv.h"
 #include "paxos_udp.h"
 #include "acceptor_stable_storage.h"
@@ -17,22 +15,106 @@ void sendbuf_clear(udp_send_buffer * sb, paxos_msg_code type) {
     m->data_size = sizeof(paxos_msg);
     
     switch(type) {
-        case repeat_reqs: {
-            m->data_size += sizeof(repeat_req_batch);
-            repeat_req_batch * rrb = (repeat_req_batch *)&m->data;
-            rrb->count = 0;    
+
+        //Acceptor
+        case prepare_acks: {
+            m->data_size += sizeof(prepare_ack_batch);
+            prepare_ack_batch * pab = (prepare_ack_batch *)&m->data;
+            pab->count = 0;    
         } break;
         
         case accept_acks: {
             m->data_size += sizeof(accept_ack_batch);
             accept_ack_batch * aab = (accept_ack_batch *)&m->data;
-            aab->n_of_acks = 0;
+            aab->count = 0;
+        } break;
+        
+        //Learner
+        case repeat_reqs: {
+            m->data_size += sizeof(repeat_req_batch);
+            repeat_req_batch * rrb = (repeat_req_batch *)&m->data;
+            rrb->count = 0;    
         } break;
             
         default: {
             
+            printf("Invalid message type %d for sendbuf_clear!\n", 
+                type);
+            
         }
     }
+}
+
+void sendbuf_add_prepare_ack(udp_send_buffer * sb, acceptor_record * rec) {
+    paxos_msg * m = (paxos_msg *) &sb->buffer;
+    prepare_ack_batch * pab = (prepare_ack_batch *)&m->data;
+    
+    size_t pa_size = (sizeof(prepare_ack) + rec->value_size);
+
+    if(PAXOS_MSG_SIZE(m) + pa_size >= MAX_UDP_MSG_SIZE) {
+        // Next propose_ack to add does not fit, flush the current 
+        // message before adding it
+        stablestorage_tx_end();
+        sendbuf_flush(sb);
+        sendbuf_clear(sb, prepare_acks);
+        stablestorage_tx_begin();
+    }
+    
+    prepare_ack * pa = (prepare_ack *)&pab->data[m->data_size];
+    pa->ballot = rec->ballot;
+    pa->value_ballot = rec->value_ballot;
+    pa->value_size = rec->value_size;
+    
+    //If there's no value this copies 0 bytes!
+    memcpy(pa->value, rec->value, rec->value_size);
+    
+    sb->dirty = 1;
+    m->data_size += pa_size;
+    pab->count += 1;
+}
+
+
+void sendbuf_add_accept_ack(udp_send_buffer * sb, acceptor_record * rec) {
+    paxos_msg * m = (paxos_msg *) &sb->buffer;
+    accept_ack_batch * aab = (accept_ack_batch *)&m->data;
+    
+    size_t aa_size = ACCEPT_ACK_SIZE(rec);
+    
+    if(PAXOS_MSG_SIZE(m) + aa_size >= MAX_UDP_MSG_SIZE) {
+        // Next accept to add does not fit, flush the current 
+        // message before adding it
+        stablestorage_tx_end();
+        sendbuf_flush(sb);
+        sendbuf_clear(sb, accept_acks);
+        stablestorage_tx_begin();
+    }
+    
+
+    accept_ack * aa = (accept_ack *)&aab->data[m->data_size];
+    memcpy(aa, rec, aa_size);
+    
+    sb->dirty = 1;
+    m->data_size += aa_size;
+    aab->count += 1;
+    
+}
+
+void sendbuf_add_repeat_req(udp_send_buffer * sb, iid_t iid) {
+    paxos_msg * m = (paxos_msg *) &sb->buffer;
+
+    if(PAXOS_MSG_SIZE(m) + sizeof(iid_t) >= MAX_UDP_MSG_SIZE) {
+        // Next iid to add does not fit, flush the current 
+        // message before adding it
+        sendbuf_flush(sb);
+        sendbuf_clear(sb, prepare_reqs);
+    }
+    
+    sb->dirty = 1;
+    m->data_size += sizeof(iid_t);
+    
+    repeat_req_batch * rrb = (repeat_req_batch *)&m->data;
+    rrb->requests[rrb->count] = iid;
+    rrb->count += 1;
 }
 
 void sendbuf_flush(udp_send_buffer * sb) {
@@ -56,49 +138,6 @@ void sendbuf_flush(udp_send_buffer * sb) {
     if (cnt != (int)PAXOS_MSG_SIZE(m) || cnt == -1) {
         perror("failed to send message");
     }
-}
-
-void sendbuf_add_repeat_req(udp_send_buffer * sb, iid_t iid) {
-    paxos_msg * m = (paxos_msg *) &sb->buffer;
-
-    if(PAXOS_MSG_SIZE(m) + sizeof(iid_t) >= MAX_UDP_MSG_SIZE) {
-        // Next iid to add does not fit, flush the current 
-        // message before adding it
-        sendbuf_flush(sb);
-        sendbuf_clear(sb, prepare_reqs);
-    }
-    
-    sb->dirty = 1;
-    m->data_size += sizeof(iid_t);
-    
-    repeat_req_batch * rrb = (repeat_req_batch *)&m->data;
-    rrb->requests[rrb->count] = iid;
-    rrb->count += 1;
-}
-
-void sendbuf_add_accept_ack(udp_send_buffer * sb, acceptor_record * rec) {
-    paxos_msg * m = (paxos_msg *) &sb->buffer;
-    accept_ack_batch * aab = (accept_ack_batch *)&m->data;
-    
-    size_t aa_size = ACCEPT_ACK_SIZE(rec);
-    
-    if(PAXOS_MSG_SIZE(m) + aa_size >= MAX_UDP_MSG_SIZE) {
-        // Next accept to add does not fit, flush the current 
-        // message before adding it
-        stablestorage_tx_end();
-        sendbuf_flush(sb);
-        sendbuf_clear(sb, accept_acks);
-        stablestorage_tx_begin();
-    }
-    
-    sb->dirty = 1;
-    m->data_size += aa_size;
-
-    accept_ack * aa = (accept_ack *)&aab->data[m->data_size];
-    memcpy(aa, rec, ACCEPT_ACK_SIZE(rec));
-    
-    aab->n_of_acks += 1;
-    
 }
 
 udp_send_buffer * udp_sendbuf_new(char* address_string, int port) {

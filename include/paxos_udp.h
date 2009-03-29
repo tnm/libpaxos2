@@ -28,6 +28,7 @@ void sendbuf_flush(udp_send_buffer * sb);
 
 void sendbuf_add_repeat_req(udp_send_buffer * sb, iid_t iid);
 void sendbuf_add_accept_ack(udp_send_buffer * sb, acceptor_record * rec);
+void sendbuf_add_prepare_ack(udp_send_buffer * sb, acceptor_record * rec);
 
 udp_receiver * udp_receiver_new(char* address_string, int port);
 int udp_read_next_message(udp_receiver * recv_info);
