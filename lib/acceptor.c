@@ -22,6 +22,7 @@ static struct timeval periodic_repeat_interval;
 
 static iid_t highest_accepted_iid = 0;
 
+
 /*-------------------------------------------------------------------------*/
 // Helpers
 /*-------------------------------------------------------------------------*/
@@ -55,10 +56,45 @@ acc_periodic_repeater(int fd, short event, void *arg)
 /*-------------------------------------------------------------------------*/
 
 void handle_prepare_req_batch(prepare_req_batch* prb) {
+//Received a batch of prepare requests (phase 1a)
+// may answer with multiple messages, before sending each one
+// local changes must be made persistent.
 //TODO
+
 }
-void handle_accept_req_batch(accept_req_batch* pr) {
-//TODO            
+
+void handle_accept_req_batch(accept_req_batch* arb) {
+    //Received a batch of accept requests (phase 2a)
+    // may answer with multiple messages, all reads/updates
+    // needs to be wrapped into transactions
+//TODO
+
+}
+
+void handle_repeat_req_batch(repeat_req_batch* rrb) {
+    //Received a batch of repeat requests from a learner
+    // may answer with multiple messages, all reads are wrapped
+    // into transactions
+    LOG(DBG, ("Repeating accept for %d instances\n", rrb->count));
+
+    //Create empty accept_ack_batch in buffer
+    sendbuf_clear(to_learners, accept_acks);
+
+    //Wrap in a (read-only) transaction
+    stablestorage_tx_begin();
+    
+    short int i;
+    for(i = 0; i < rrb->count; i++) {
+        acceptor_record * rec = stablestorage_get_record(rrb->requests[i]);
+        if(rec != NULL) {
+            sendbuf_add_accept_ack(to_learners, rec);
+        }
+    }
+    
+    stablestorage_tx_end();
+    
+    //Flush if dirty flag is set
+    sendbuf_flush(to_learners);
 }
 
 
@@ -91,6 +127,10 @@ static void acc_handle_newmsg(int sock, short event, void *arg) {
         }
         break;
 
+        case repeat_reqs: {
+            handle_repeat_req_batch((repeat_req_batch*) msg->data);
+        }
+        break;
 
         default: {
             printf("Unknow msg type %d received by acceptor\n", msg->type);

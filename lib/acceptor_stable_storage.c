@@ -2,7 +2,7 @@
 #include <string.h>
 #include <errno.h>
 #include <sys/stat.h>
-
+#include <assert.h>
 /*
 Getting started:
  http://www.oracle.com/technology/documentation/berkeley-db/db/gsg/C/index.html
@@ -19,6 +19,10 @@ BDB Forums @ Oracle
 
 static DB_ENV *dbenv;
 static DB *dbp;
+static DB_TXN *txn;
+
+static char record_buf[MAX_UDP_MSG_SIZE];
+static acceptor_record * record_buffer = (acceptor_record*)record_buf;
 
 static int do_recovery = 0;
 
@@ -145,4 +149,63 @@ int stablestorage_shutdown() {
     LOG(VRB, ("DB close completed\n"));
     
     return result;
+}
+
+void 
+stablestorage_tx_begin() {
+    //Begin a new transaction
+    int result;
+    result = dbenv->txn_begin(dbenv, NULL, &txn, 0);
+    assert(result == 0);
+}
+
+void 
+stablestorage_tx_end() {
+    //End current transaction, 
+    // since it's either read only or write only
+    // and there is no concurrency, should always commit
+    int result;
+    result = txn->commit(txn, 0);
+    assert(result == 0);
+}
+
+acceptor_record * 
+stablestorage_get_record(iid_t iid) {
+    int flags, result;
+    DBT dbkey, dbdata;
+    
+    memset(&dbkey, 0, sizeof(DBT));
+    memset(&dbdata, 0, sizeof(DBT));
+
+    //Key is iid
+    dbkey.data = &iid;
+    dbkey.size = sizeof(iid_t);
+    
+    //Data is our buffer
+    dbdata.data = record_buffer;
+    dbdata.ulen = MAX_UDP_MSG_SIZE;
+    //Force copy to the specified buffer
+    dbdata.flags = DB_DBT_USERMEM;
+
+    flags = 0;
+    result = dbp->get(dbp, 
+        txn, 
+        &dbkey, 
+        &dbdata, 
+        flags);
+        
+    if(result == 1 || result == 1) {
+        //Record does not exist
+        LOG(DBG, ("The record for iid:%lu does not exist\n", iid));
+        return NULL;
+    } else if (result != 0) {
+        //Read error!
+        printf("Error while reading record for iid:%lu : %s\n",
+            iid, db_strerror(result));
+        return NULL;
+    }
+    
+    //Record found
+    assert(iid == record_buffer->iid);
+    return record_buffer;
 }

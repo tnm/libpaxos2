@@ -8,8 +8,10 @@
 
 typedef struct udp_send_buffer_t {
     int sock;
-    struct sockaddr_in addr;    
-    char buffer[MAX_UDP_MSG_SIZE];    
+    struct sockaddr_in addr;
+    int dirty;
+    // size_t bufsize;
+    char buffer[MAX_UDP_MSG_SIZE];
 } udp_send_buffer;
 
 typedef struct udp_receiver_t {
@@ -20,6 +22,12 @@ typedef struct udp_receiver_t {
 
 
 udp_send_buffer * udp_sendbuf_new(char* address_string, int port);
+void sendbuf_clear(udp_send_buffer * sb, paxos_msg_code type);
+void sendbuf_flush(udp_send_buffer * sb);
+
+
+void sendbuf_add_repeat_req(udp_send_buffer * sb, iid_t iid);
+void sendbuf_add_accept_ack(udp_send_buffer * sb, acceptor_record * rec);
 
 udp_receiver * udp_receiver_new(char* address_string, int port);
 int udp_read_next_message(udp_receiver * recv_info);

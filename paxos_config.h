@@ -20,7 +20,8 @@
 /*
     Periodically (every ACCEPTOR_REPEAT_INTERVAL seconds) the acceptor
     repeats the latest (by instance id) accept received. 
-    This is useful to keep the learners updated in very low-traffic situations
+    This is useful to keep the learners updated in very low-traffic 
+    situations.
 */
 #define ACCEPTOR_REPEAT_INTERVAL 5
 
@@ -33,6 +34,15 @@
 */
 #define QUORUM (((int)(N_OF_ACCEPTORS/2))+1)
 
+/*
+    Periodically (as specified by the two variables below)
+    the learner will check for "holes": instance i is closed but
+    it cannot be delivered since i-1 or i-2 was not closed yet.
+    If some hole is detected, will ask the acceptors to repeat
+    their decision for the not-yet-closed instances.
+*/
+#define LEARNER_HOLECHECK_INTERVAL_S 3
+#define LEARNER_HOLECHECK_INTERVAL_US 0
 
 /*** ACCEPTORS DB SETTINGS ***/
 

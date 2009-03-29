@@ -16,6 +16,9 @@
 #define LEARNER_STARTING (1)
 #define INST_INFO_EMPTY (0)
 
+#define IS_CLOSED(INST) (INST->final_value != NULL)
+
+
 typedef struct learner_instance_info {
     iid_t           iid;
     ballot_t        last_update_ballot;
@@ -25,9 +28,9 @@ typedef struct learner_instance_info {
     // int         final_value_size;
 } inst_info;
 
-static iid_t highest_iid_delivered = 0;
 static iid_t highest_iid_seen = 1;
 static iid_t current_iid = 1;
+static iid_t highest_iid_closed = 0;
 static inst_info learner_state[LEARNER_ARRAY_SIZE];
 
 static custom_init_function custom_init = NULL;
@@ -40,6 +43,9 @@ static pthread_t learner_thread = NULL;
 
 static struct event_base * eb;
 struct event learner_msg_event;
+
+static struct event hole_check_event;
+static struct timeval hole_check_interval;
 
 static udp_send_buffer * to_acceptors;
 static udp_receiver * for_learner;
@@ -84,7 +90,7 @@ static int lea_update_state(inst_info * ii, short int acceptor_id, accept_ack * 
     assert(ii->iid == aa->iid);
     
     //Closed already, drop
-    if(ii->final_value != NULL) {
+    if(IS_CLOSED(ii)) {
         LOG(DBG, ("Dropping accept_ack for iid:%lu, already closed\n", aa->iid));
         return 0;
     }
@@ -100,6 +106,7 @@ static int lea_update_state(inst_info * ii, short int acceptor_id, accept_ack * 
     
     //There is already a message from the same acceptor
     accept_ack * prev_ack = ii->acks[acceptor_id];
+    
     //Already more recent info in the record, accept_ack is old
     if(prev_ack->ballot >= aa->ballot) {
         LOG(DBG, ("Dropping accept_ack for iid:%lu, more stored ballot is newer or equal\n", aa->iid));
@@ -115,15 +122,26 @@ static int lea_update_state(inst_info * ii, short int acceptor_id, accept_ack * 
 
 //Returns 0 if the instance is not closed yet, 1 otherwise
 static int lea_check_quorum(inst_info * ii) {
-    size_t i, a_valid_index=-1, count=0;
+    size_t i, a_valid_index = -1, count = 0;
     accept_ack * curr_ack;
     
     //Iterates over stored acks
     for(i = 0; i < N_OF_ACCEPTORS; i++) {
         curr_ack = ii->acks[i];
+        
+        //Count the ones "agreeing" with the last added
         if(curr_ack->ballot == ii->last_update_ballot){
             a_valid_index = i;
             count++;
+            
+            //Special case: an acceptor is telling that
+            //this value is -final-, it can be delivered 
+            // immediately.
+            if(curr_ack->is_final) {
+                //For sure >= than quorum...
+                count += N_OF_ACCEPTORS;
+                break;
+            }
         }
     }
     
@@ -131,6 +149,12 @@ static int lea_check_quorum(inst_info * ii) {
     if(count >= QUORUM) {
         LOG(DBG, ("Reached quorum, iid:%lu is closed!\n", ii->iid));
         ii->final_value = ii->acks[a_valid_index];
+        
+        //Keep track of highest closed
+        if(ii->iid > highest_iid_closed) {
+            highest_iid_closed = ii->iid;
+        }
+        
         return 1;
     }
     
@@ -161,6 +185,47 @@ static void lea_deliver_next_closed() {
 
 }
 
+static void 
+lea_send_repeat_request(iid_t from, iid_t to) {
+    iid_t i;
+    
+    inst_info * ii;
+    //Create empty repeat_request in buffer
+    sendbuf_clear(to_acceptors, repeat_reqs);
+    
+    for(i = from; i < to; i++) {
+        //Request all non-closed in from...to range
+        ii = GET_LEA_INSTANCE(i);
+        if(!IS_CLOSED(ii)) {
+            sendbuf_add_repeat_req(to_acceptors, i);
+        }
+    }
+    //Flush if dirty flag is set
+    sendbuf_flush(to_acceptors);
+}
+
+
+static void
+lea_hole_check(int fd, short event, void *arg) {
+    UNUSED_ARG(fd);
+    UNUSED_ARG(event);
+    UNUSED_ARG(arg);
+
+    //Periodic check for missing instances
+    //(i.e. i+1 closed, but i not closed yet)
+    if(highest_iid_closed > current_iid) {
+        LOG(VRB, ("Out of sync, highest closed:%lu, highest delivered:%lu\n", 
+            highest_iid_closed, current_iid));
+        //Ask retransmission to acceptors
+        lea_send_repeat_request(current_iid, highest_iid_closed);
+    }
+        
+    //Set the next timeout for calling this function
+    if(event_add(&hole_check_event, &hole_check_interval) != 0) {
+	   printf("Error while adding next hole_check event\n");
+	}
+}
+
 /*-------------------------------------------------------------------------*/
 // Event handlers
 /*-------------------------------------------------------------------------*/
@@ -172,13 +237,13 @@ static void handle_accept_ack(short int acceptor_id, accept_ack * aa) {
     }
     
     //Already closed and delivered, drop
-    if(aa->iid <= highest_iid_delivered) {
+    if(aa->iid <= current_iid) {
         LOG(DBG, ("Dropping accept_ack for already delivered iid:%lu\n", aa->iid));
         return;
     }
     
     //We are late w.r.t the current iid, drop
-    if(aa->iid >= highest_iid_delivered + LEARNER_ARRAY_SIZE) {
+    if(aa->iid >= current_iid + LEARNER_ARRAY_SIZE) {
         LOG(DBG, ("Dropping accept_ack for iid:%lu, too far in future\n", aa->iid));
         return;
     }
@@ -201,7 +266,7 @@ static void handle_accept_ack(short int acceptor_id, accept_ack * aa) {
 
     //If the closed instance is last delivered + 1
     //Deliver it (and the following if already closed)
-    if (aa->iid == highest_iid_delivered+1) {
+    if (aa->iid == current_iid+1) {
         lea_deliver_next_closed(aa->iid);
     }
 }
@@ -220,9 +285,7 @@ static void handle_accept_ack_batch(accept_ack_batch* aab) {
         handle_accept_ack(aab->acceptor_id, aa);
         data_offset += ACCEPT_ACK_SIZE(aa);
         aa = (accept_ack*) &aab->data[data_offset];
-    }
-    
-    assert(data_offset == aab->data_size);
+    }    
 }
 
 static void lea_handle_newmsg(int sock, short event, void *arg) {
@@ -289,6 +352,22 @@ static int init_lea_network() {
     return 0;
 }
 
+static int 
+init_lea_timers() {
+    
+    //Set up the first timer for hole checking
+    evtimer_set(&hole_check_event, lea_hole_check, NULL);
+	evutil_timerclear(&hole_check_interval);
+	hole_check_interval.tv_sec = LEARNER_HOLECHECK_INTERVAL_S;
+    hole_check_interval.tv_usec = LEARNER_HOLECHECK_INTERVAL_US;
+	if(event_add(&hole_check_event, &hole_check_interval) != 0) {
+	   printf("Error while adding first periodic hole_check event\n");
+       return -1;
+	}
+    
+    return 0;
+}
+
 static void init_lea_failure(char * msg) {
     //Init failed for some reason
     printf("Learner init error: %s\n", msg);
@@ -336,6 +415,12 @@ static void* init_learner_thread(void* arg) {
     //Init sockets and send buffer
     if(init_lea_network() != 0) {
         init_lea_failure("Error in learner network init\n");
+        return NULL;
+    }
+
+    //Timers initialization
+    if(init_lea_timers() != 0) {
+        init_lea_failure("Error in learner timers initialization\n");
         return NULL;
     }
     

@@ -14,6 +14,8 @@
 // but leaves the underlying libevent loop running.
 void learner_suspend();
 
+typedef accept_ack acceptor_record;
+
 // #define PAXOS_MSG_SIZE(m) (sizeof(paxos_msg) + m->size)
 // 
 // typedef struct prepare_msg_t {
@@ -85,7 +87,7 @@ void learner_suspend();
    This is equivalent to n mod LEARNER_ARRAY_SIZE, 
    works only if LEARNER_ARRAY_SIZE is a power of 2.
 */
-#define GET_LEA_INDEX(n) (n & (LEARNER_ARRAY_SIZE-1))
+// #define GET_LEA_INDEX(n) (n & (LEARNER_ARRAY_SIZE-1))
 #define GET_LEA_INSTANCE(I) &learner_state[((I) & (LEARNER_ARRAY_SIZE-1))]
 
 // 

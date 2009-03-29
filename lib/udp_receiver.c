@@ -23,7 +23,14 @@ static int validate_paxos_msg(paxos_msg * m, size_t msg_size) {
                 printf("Invalida acceptor id:%d\n", aa->acceptor_id);
                 return -1;
             }
-            expected_size += ACCEPT_ACK_BATCH_SIZE(aa);
+            // expected_size += ACCEPT_ACK_BATCH_SIZE(aa);
+            expected_size += m->data_size;
+        }
+        break;
+        
+        case repeat_reqs: {
+            repeat_req_batch * rrb = (repeat_req_batch *)m->data;
+            expected_size += REPEAT_REQ_BATCH_SIZE(rrb);
         }
         break;
         
