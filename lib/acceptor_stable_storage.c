@@ -209,3 +209,35 @@ stablestorage_get_record(iid_t iid) {
     assert(iid == record_buffer->iid);
     return record_buffer;
 }
+
+int stablestorage_update_record(accept_req * ar) {
+    int flags, result;
+    DBT dbkey, dbdata;
+    
+    //Store as acceptor_record (== accept_ack)
+    record_buffer->iid = ar->iid;
+    record_buffer->ballot = ar->ballot;
+    record_buffer->is_final = 0;
+    record_buffer->value_size = ar->value_size;
+    memcpy(record_buffer->value, ar->value, ar->value_size);
+    
+    memset(&dbkey, 0, sizeof(DBT));
+    memset(&dbdata, 0, sizeof(DBT));
+
+    //Key is iid
+    dbkey.data = &ar->iid;
+    dbkey.size = sizeof(iid_t);
+        
+    //Data is our buffer
+    dbdata.data = record_buffer;
+    dbdata.size = ACCEPT_ACK_SIZE(record_buffer);
+    
+    flags = 0;
+    result = dbp->put(dbp, 
+        txn, 
+        &dbkey, 
+        &dbdata, 
+        0);
+    
+    return result;
+}

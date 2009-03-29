@@ -22,13 +22,56 @@ static struct timeval periodic_repeat_interval;
 
 static iid_t highest_accepted_iid = 0;
 
+// TODO periodic retransmission and update-on-deliver are currently in a transaction. Could be prepended to the next instead
 
 /*-------------------------------------------------------------------------*/
 // Helpers
 /*-------------------------------------------------------------------------*/
+//Given an accept request message and the current record
+// will update the record if the request is legal
+// Return 0 for no changes, 1 for update applied
+static int
+acc_apply_accept(accept_req * ar, acceptor_record * rec){
+    int result;
+    //We already have a more recent ballot
+    if (rec != NULL && rec->ballot <= ar->ballot) {
+        LOG(DBG, ("Accept for iid:%lu dropped (ballots curr:%u recv:%u)\n", 
+            ar->iid, rec->ballot, ar->ballot));
+        return 0;
+    }
+    
+    //Record not found or smaller ballot
+    // in both cases overwrite and store
+    LOG(DBG, ("Accepting for iid:%lu (ballot:%u)\n", 
+        ar->iid, ar->ballot));    
+    result = stablestorage_update_record(ar);
+    assert(result == 0);
+    
+    //Keep track of highest accepted for retransmission
+    if(ar->iid > highest_accepted_iid) {
+        highest_accepted_iid = ar->iid;
+        LOG(DBG, ("Highest accepted is now iid:%lu\n", 
+            highest_accepted_iid));
+    }
+    return 1;
+}
+
 static void
 acc_retransmit_latest_accept() {
-//TODO        
+    
+    acceptor_record * rec;
+    
+    sendbuf_clear(to_learners, accept_acks);
+    
+    stablestorage_tx_begin();
+    
+    rec = stablestorage_get_record(highest_accepted_iid);
+    sendbuf_add_accept_ack(to_learners, rec);
+    
+    stablestorage_tx_end();
+    
+    sendbuf_flush(to_learners);
+    
 }
     
 static void
@@ -67,7 +110,39 @@ void handle_accept_req_batch(accept_req_batch* arb) {
     //Received a batch of accept requests (phase 2a)
     // may answer with multiple messages, all reads/updates
     // needs to be wrapped into transactions
-//TODO
+    LOG(DBG, ("Handling accept for %d instances\n", arb->count));
+
+    //Create empty accept_ack_batch in buffer
+    sendbuf_clear(to_learners, accept_acks);
+
+    //Wrap in a transaction
+    stablestorage_tx_begin();
+    
+    short int i, accepted;
+    size_t data_offset = 0;
+    accept_req * ar;
+    acceptor_record * rec;
+    
+    //Iterate over accept_req in batch
+    for(i = 0; i < arb->count; i++) {
+        ar = (accept_req*) &arb->data[data_offset];
+        
+        //Retrieve correspondin record
+        rec = stablestorage_get_record(ar->iid);
+        //Try to apply accept
+        accepted = acc_apply_accept(ar, rec);
+        //If accepted, send accept_ack
+        if(accepted) {
+            sendbuf_add_accept_ack(to_learners, rec);
+        }
+
+        data_offset += ACCEPT_REQ_SIZE(ar);
+    }
+    
+    stablestorage_tx_end();
+    
+    //Flush if dirty flag is set
+    sendbuf_flush(to_learners);
 
 }
 
@@ -84,8 +159,9 @@ void handle_repeat_req_batch(repeat_req_batch* rrb) {
     stablestorage_tx_begin();
     
     short int i;
+    acceptor_record * rec;
     for(i = 0; i < rrb->count; i++) {
-        acceptor_record * rec = stablestorage_get_record(rrb->requests[i]);
+        rec = stablestorage_get_record(rrb->requests[i]);
         if(rec != NULL) {
             sendbuf_add_accept_ack(to_learners, rec);
         }

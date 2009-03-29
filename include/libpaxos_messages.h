@@ -37,8 +37,18 @@ typedef struct accept_ack_batch_t {
 } accept_ack_batch;
 // #define ACCEPT_ACK_BATCH_SIZE(B) (B->data_size + sizeof(accept_ack_batch))
 
+typedef struct accept_req_t {
+    iid_t iid;
+    ballot_t ballot;
+    size_t value_size;
+    char value[0];
+} accept_req;
+#define ACCEPT_REQ_SIZE(M) (M->value_size + sizeof(accept_req))
+
 typedef struct accept_req_batch_t {
-    
+    short int count;
+    short int proposer_id;
+    char data[0];
 } accept_req_batch;
 
 typedef struct prepare_req_batch_t {
