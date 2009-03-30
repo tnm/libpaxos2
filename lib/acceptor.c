@@ -11,15 +11,25 @@
 
 #define ACCEPTOR_ERROR (-1)
 
+//Unique identifier of this acceptor
 int this_acceptor_id = -1;
 
+//UDP socket managers for sending
 static udp_send_buffer * to_proposers;
 static udp_send_buffer * to_learners;
+
+//UDP socket manager for receiving
 static udp_receiver * for_acceptor;
+
+//Event: Message received
 static struct event acceptor_msg_event;
+
+//Event: Time to repeat last accept
 static struct event repeat_accept_event;
+//Interval at which the previous event fires
 static struct timeval periodic_repeat_interval;
 
+//The highest instance id for which a value was accepted
 static iid_t highest_accepted_iid = 0;
 
 // TODO periodic retransmission and update-on-deliver are currently in a transaction. Could be prepended to the next instead
@@ -28,9 +38,9 @@ static iid_t highest_accepted_iid = 0;
 // Helpers
 /*-------------------------------------------------------------------------*/
 
-//Given an accept request message and the current record
+//Given an accept request (phase 2a) message and the current record
 // will update the record if the request is legal
-// Return NULL for no changes, the new record for update applied
+// Return NULL for no changes, the new record if the accept was applied
 static acceptor_record *
 acc_apply_accept(accept_req * ar, acceptor_record * rec) {
     //We already have a more recent ballot
@@ -45,6 +55,7 @@ acc_apply_accept(accept_req * ar, acceptor_record * rec) {
     LOG(DBG, ("Accepting for iid:%lu (ballot:%u)\n", 
         ar->iid, ar->ballot));
     
+    //Store the updated record
     rec = stablestorage_save_accept(ar);
     
     //Keep track of highest accepted for retransmission
@@ -55,10 +66,10 @@ acc_apply_accept(accept_req * ar, acceptor_record * rec) {
     }
     return rec;
 }
-//Given a prepare (phase 1a) request message and the c
-// corresponding record, will update if the request is valid
-// Return NULL for no changes, the new record for update applied
 
+//Given a prepare (phase 1a) request message and the
+// corresponding record, will update if the request is valid
+// Return NULL for no changes, the new record if the promise was made
 static acceptor_record *
 acc_apply_prepare(prepare_req * pr, acceptor_record * rec) {
     //We already have a more recent ballot
@@ -79,13 +90,15 @@ acc_apply_prepare(prepare_req * pr, acceptor_record * rec) {
     // in both cases overwrite and store
     LOG(DBG, ("Prepare request is valid for iid:%lu (ballot:%u)\n", 
         pr->iid, pr->ballot));
-
+    
+    //Store the updated record
     rec = stablestorage_save_prepare(pr, rec);
 
     return rec;
 }
 
-
+//Reads the last (by iid) instance for which a value was accepted
+// and re-transmit it to the learners
 static void
 acc_retransmit_latest_accept() {
     
@@ -103,7 +116,10 @@ acc_retransmit_latest_accept() {
     sendbuf_flush(to_learners);
     
 }
-    
+ 
+//This function is invoked periodically
+// (periodic_repeat_interval) to retrasmit the most 
+// recent accept
 static void
 acc_periodic_repeater(int fd, short event, void *arg)
 {
@@ -112,8 +128,8 @@ acc_periodic_repeater(int fd, short event, void *arg)
     UNUSED_ARG(arg);
     
     //If some value has been accepted,
-    //Rebroadcast most recent (so that learners stay up-to-date)
     if (highest_accepted_iid > 0) {
+        //Rebroadcast most recent (so that learners stay up-to-date)
         LOG(DBG, ("re-seding most recent accept, iid:%lu", highest_accepted_iid));
         acc_retransmit_latest_accept();
     }
@@ -128,10 +144,12 @@ acc_periodic_repeater(int fd, short event, void *arg)
 // Event handlers
 /*-------------------------------------------------------------------------*/
 
-void handle_prepare_req_batch(prepare_req_batch* prb) {
-//Received a batch of prepare requests (phase 1a)
-// may answer with multiple messages, before sending each one
-// local changes must be made persistent.
+//Received a batch of prepare requests (phase 1a), 
+// may answer with multiple messages, all reads/updates
+// needs to be wrapped into transactions and made persistent
+// before sending the corresponding acknowledgement
+static void 
+handle_prepare_req_batch(prepare_req_batch* prb) {
     
     LOG(DBG, ("Handling prepare for %d instances\n", prb->count));
 
@@ -145,10 +163,11 @@ void handle_prepare_req_batch(prepare_req_batch* prb) {
     acceptor_record * rec;
     prepare_req * pr;
 
+    //Iterate over the prepare_req in the batch
     for(i = 0; i < prb->count; i++) {
         pr = &prb->prepares[i];
         
-        //Retrieve correspondin record
+        //Retrieve corresponding record
         rec = stablestorage_get_record(pr->iid);
         //Try to apply prepare
         rec = acc_apply_prepare(pr, rec);
@@ -161,15 +180,17 @@ void handle_prepare_req_batch(prepare_req_batch* prb) {
     
     stablestorage_tx_end();
     
-    //Flush if dirty flag is set
+    //Flush the send buffer if there's something
     sendbuf_flush(to_learners);
 
 }
 
-void handle_accept_req_batch(accept_req_batch* arb) {
-    //Received a batch of accept requests (phase 2a)
-    // may answer with multiple messages, all reads/updates
-    // needs to be wrapped into transactions
+//Received a batch of accept requests (phase 2a)
+// may answer with multiple messages, all reads/updates
+// needs to be wrapped into transactions and made persistent
+// before sending the corresponding acknowledgement
+static void 
+handle_accept_req_batch(accept_req_batch* arb) {
     LOG(DBG, ("Handling accept for %d instances\n", arb->count));
 
     //Create empty accept_ack_batch in buffer
@@ -201,15 +222,17 @@ void handle_accept_req_batch(accept_req_batch* arb) {
     
     stablestorage_tx_end();
     
-    //Flush if dirty flag is set
+    //Flush the send buffer if there's something
     sendbuf_flush(to_learners);
 
 }
 
-void handle_repeat_req_batch(repeat_req_batch* rrb) {
-    //Received a batch of repeat requests from a learner
-    // may answer with multiple messages, all reads are wrapped
-    // into transactions
+//Received a batch of repeat requests from a learner,
+// will repeat the accepted value for that instance (if any).
+// May answer with multiple messages, all reads are wrapped
+// into transactions
+static void 
+handle_repeat_req_batch(repeat_req_batch* rrb) {
     LOG(DBG, ("Repeating accept for %d instances\n", rrb->count));
 
     //Create empty accept_ack_batch in buffer
@@ -220,8 +243,14 @@ void handle_repeat_req_batch(repeat_req_batch* rrb) {
     
     short int i;
     acceptor_record * rec;
+    
+    //Iterate over the repeat_req in the batch
     for(i = 0; i < rrb->count; i++) {
+        //Read the corresponding record
         rec = stablestorage_get_record(rrb->requests[i]);
+        
+        //If a value was accepted, send accept_ack
+        //FIXME: val_size == 0?
         if(rec != NULL) {
             sendbuf_add_accept_ack(to_learners, rec);
         }
@@ -229,29 +258,31 @@ void handle_repeat_req_batch(repeat_req_batch* rrb) {
     
     stablestorage_tx_end();
     
-    //Flush if dirty flag is set
+    //Flush the send buffer if there's something
     sendbuf_flush(to_learners);
 }
 
-
-static void acc_handle_newmsg(int sock, short event, void *arg) {
+//This function is invoked when a new message is ready to be read
+// from the acceptor UDP socket
+static void 
+acc_handle_newmsg(int sock, short event, void *arg) {
     //Make the compiler happy!
     UNUSED_ARG(sock);
     UNUSED_ARG(event);
     UNUSED_ARG(arg);
-    printf("handle acceptor event!\n");
     
     assert(sock == for_acceptor->sock);
     
+    //Read the next message
     int valid = udp_read_next_message(for_acceptor);
-    
     if (valid < 0) {
         printf("Dropping invalid acceptor message\n");
         return;
     }
     
+    //The message is valid, take the appropriate action
+    // based on the type
     paxos_msg * msg = (paxos_msg*) &for_acceptor->recv_buffer;
-
     switch(msg->type) {
         case prepare_reqs: {
             handle_prepare_req_batch((prepare_req_batch*) msg->data);
@@ -274,7 +305,13 @@ static void acc_handle_newmsg(int sock, short event, void *arg) {
     }
 }
 
-void acc_deliver_callback(char * value, size_t size, int iid, int ballot, int proposer) {
+//The acceptor runs on top of a learner, if the learner is active
+// (ACCEPTOR_UPDATE_ON_DELIVER is defined), this is the function 
+// invoked when a value is delivered.
+// The acceptor overwrites his personal record with the delivered value
+// since it will never change again
+void 
+acc_deliver_callback(char * value, size_t size, int iid, int ballot, int proposer) {
     UNUSED_ARG(value);
     UNUSED_ARG(size);
     UNUSED_ARG(iid);
@@ -296,7 +333,9 @@ void acc_deliver_callback(char * value, size_t size, int iid, int ballot, int pr
 // Initialization
 /*-------------------------------------------------------------------------*/
 
-static int init_acc_network() {
+//Initialize sockets and related events
+static int 
+init_acc_network() {
     
     // Send buffer for talking to proposers
     to_proposers = udp_sendbuf_new(PAXOS_PROPOSERS_NET);
@@ -324,8 +363,11 @@ static int init_acc_network() {
     return 0;
 }
 
+//Initialize timers
 static int 
 init_acc_timers() {
+    
+    //Sets the first acc_periodic_repeater invocation timeout
     evtimer_set(&repeat_accept_event, acc_periodic_repeater, NULL);
 	evutil_timerclear(&periodic_repeat_interval);
 	periodic_repeat_interval.tv_sec = ACCEPTOR_REPEAT_INTERVAL;
@@ -338,14 +380,16 @@ init_acc_timers() {
     return 0;
 }
 
+//Initialize the underlying persistent storage
+// Berlekey DB in this case
 static int
 init_acc_stable_storage() {
     return stablestorage_init(this_acceptor_id);
 }
 
+//Acceptor initialization, this function is invoked by
+// the underlying learner after it's normal initialization
 static int init_acceptor() {
-    //This is invoked by the learner thread
-    //after it's normal initialization
 
 #ifdef ACCEPTOR_UPDATE_ON_DELIVER
     //Keep the learnern running as normal
@@ -378,9 +422,13 @@ static int init_acceptor() {
     return 0;
 }
 
+/*-------------------------------------------------------------------------*/
+// Public functions (see libpaxos.h for more details)
+/*-------------------------------------------------------------------------*/
+
 int acceptor_init(int acceptor_id) {
     
-    //Check id validity
+    //Check id validity of acceptor_id
     if(acceptor_id < 0 || acceptor_id >= N_OF_ACCEPTORS) {
         printf("Invalid acceptor id:%d\n", acceptor_id);
         return -1;
@@ -389,7 +437,6 @@ int acceptor_init(int acceptor_id) {
     LOG(VRB, ("Acceptor %d starting...\n", this_acceptor_id));
     
     //Starts a learner with a custom init function
-    //Learner's functionalities can be shut down
     if (learner_init(acc_deliver_callback, init_acceptor) != 0) {
         printf("Could not start the learner!\n");
         return -1;
