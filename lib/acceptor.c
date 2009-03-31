@@ -250,8 +250,7 @@ handle_repeat_req_batch(repeat_req_batch* rrb) {
         rec = stablestorage_get_record(rrb->requests[i]);
         
         //If a value was accepted, send accept_ack
-        //FIXME: val_size == 0?
-        if(rec != NULL) {
+        if(rec != NULL && rec->value_size > 0) {
             sendbuf_add_accept_ack(to_learners, rec);
         }
     }
