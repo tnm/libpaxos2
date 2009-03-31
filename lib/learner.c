@@ -15,38 +15,55 @@
 #define LEARNER_READY (0)
 #define LEARNER_STARTING (1)
 #define INST_INFO_EMPTY (0)
-
 #define IS_CLOSED(INST) (INST->final_value != NULL)
 
-
+//Structure used to store all info relative to a given instance
 typedef struct learner_instance_info {
     iid_t           iid;
     ballot_t        last_update_ballot;
     accept_ack*     acks[N_OF_ACCEPTORS];
-    // int         proposer_id;
     accept_ack*     final_value;
-    // int         final_value_size;
 } inst_info;
 
+//Highest instance for which a message was seen
 static iid_t highest_iid_seen = 1;
+
+//Current instance, incremented when current is closed and 
+// the corresponding value is delivered
 static iid_t current_iid = 1;
+
+//Highest instance that is already closed 
+// (can be higher than current!)
 static iid_t highest_iid_closed = 0;
+
+//Array (used as a circular buffer) to store instance infos
 static inst_info learner_state[LEARNER_ARRAY_SIZE];
 
+//A custom initialization function to invoke after the normal initialization
+// Can be NULL
 static custom_init_function custom_init = NULL;
+
+//Function to invoke when the current_iid is closed, 
+// the final value and some other informations is passed as argument
 static deliver_function delfun = NULL;
 
+//Current status of the learner and related signal
+// The thread calling learner init waits until the new thread completed initialization
 static int learner_ready = LEARNER_STARTING;
 static pthread_mutex_t ready_lock = PTHREAD_MUTEX_INITIALIZER;
 static pthread_cond_t  ready_cond = PTHREAD_COND_INITIALIZER;
 static pthread_t learner_thread = NULL;
 
+//Libevent handle
 static struct event_base * eb;
+// Event: a message was received
 struct event learner_msg_event;
-
+// Event: time to check for holes
 static struct event hole_check_event;
+//Time interval for the previous event
 static struct timeval hole_check_interval;
 
+//Network managers
 static udp_send_buffer * to_acceptors;
 static udp_receiver * for_learner;
 
@@ -54,12 +71,14 @@ static udp_receiver * for_learner;
 // Helpers
 /*-------------------------------------------------------------------------*/
 
+//Resets a given instance info
 static void lea_clear_instance_info(inst_info * ii) {
     //Reset all fields and free stored messages
     ii->iid = INST_INFO_EMPTY;
     ii->last_update_ballot = 0;
     ii->final_value = NULL;
     size_t i;
+    //Free all stored accept_ack
     for(i = 0; i < N_OF_ACCEPTORS; i++) {
         if(ii->acks[i] != NULL) {
             PAX_FREE(ii->acks[i]);
@@ -68,18 +87,21 @@ static void lea_clear_instance_info(inst_info * ii) {
     }
 }
 
+//Stores the accept_ack of a given acceptor in the corresponding record 
+// at the appropriate index
+// Assumes rec->acks[acc_id] is NULL already
 static void lea_store_accept_ack(inst_info * ii, short int acceptor_id, accept_ack * aa) {
     accept_ack * new_ack = PAX_MALLOC(ACCEPT_ACK_SIZE(aa));
     memcpy(new_ack, aa, ACCEPT_ACK_SIZE(aa));
     //Store message at appropriate index (acceptor_id)
     ii->acks[acceptor_id] = new_ack;
 
-    //Keep track of most recent update
+    //Keep track of most recent accept_ack stored
     ii->last_update_ballot = aa->ballot;
 }
 
-//Returns 0 if the message was discarded because not relevant
-//1 if the state changed, so the quorum check is triggered
+//Tries to update the state based on the accept_ack received.
+//Returns 0 if the message was discarded because not relevant. 1 if the state changed.
 static int lea_update_state(inst_info * ii, short int acceptor_id, accept_ack * aa) {
     //First message for this iid
     if(ii->iid == INST_INFO_EMPTY) {
@@ -89,7 +111,7 @@ static int lea_update_state(inst_info * ii, short int acceptor_id, accept_ack * 
     }
     assert(ii->iid == aa->iid);
     
-    //Closed already, drop
+    //Instance closed already, drop
     if(IS_CLOSED(ii)) {
         LOG(DBG, ("Dropping accept_ack for iid:%lu, already closed\n", aa->iid));
         return 0;
@@ -113,14 +135,16 @@ static int lea_update_state(inst_info * ii, short int acceptor_id, accept_ack * 
         return 0;
     }
     
-    //Replace the previous ack since the ballot is older
+    //Replace the previous ack since the received ballot is newer
     LOG(DBG, ("Overwriting previous accept_ack for iid:%lu\n", aa->iid));
     PAX_FREE(prev_ack);
     lea_store_accept_ack(ii, acceptor_id, aa);
     return 1;
 }
 
-//Returns 0 if the instance is not closed yet, 1 otherwise
+//Checks if a given instance is closed, that is if a quorum of acceptor
+// accepted the same value+ballot
+//Returns 1 if the instance is closed, 0 otherwise
 static int lea_check_quorum(inst_info * ii) {
     size_t i, a_valid_index = -1, count = 0;
     accept_ack * curr_ack;
@@ -154,7 +178,7 @@ static int lea_check_quorum(inst_info * ii) {
         if(ii->iid > highest_iid_closed) {
             highest_iid_closed = ii->iid;
         }
-        
+
         return 1;
     }
     
@@ -162,12 +186,15 @@ static int lea_check_quorum(inst_info * ii) {
     return 0;
 }
 
+//Invoked when the current_iid is closed.
+// Since other instances may be closed too (curr+1, curr+2), also tries to deliver them
 static void lea_deliver_next_closed() {
     //Get next instance (last delivered + 1)
     inst_info * ii = GET_LEA_INSTANCE(current_iid + 1);
     accept_ack * aa;
     
     //If closed deliver it and all next closed
+    //FIXME: replace with IS_CLOSED(ii)
     while(ii->final_value != NULL) {
         assert(ii->iid == (current_iid + 1));
         aa = ii->final_value;
@@ -185,6 +212,8 @@ static void lea_deliver_next_closed() {
 
 }
 
+//Creates a batch of repeat_req to send to the acceptor, 
+// asking to retransmit their accepted value for a given instance
 static void 
 lea_send_repeat_request(iid_t from, iid_t to) {
     iid_t i;
@@ -204,7 +233,10 @@ lea_send_repeat_request(iid_t from, iid_t to) {
     sendbuf_flush(to_acceptors);
 }
 
-
+//This function is invoked periodically and tries to detect if the learner 
+// missed some message. For example if instance I is closed but instance I-1 
+// it's not, we can't deliver I. So it will ask to the acceptors to repeat 
+// their accepted value
 static void
 lea_hole_check(int fd, short event, void *arg) {
     UNUSED_ARG(fd);
@@ -230,19 +262,22 @@ lea_hole_check(int fd, short event, void *arg) {
 // Event handlers
 /*-------------------------------------------------------------------------*/
 
+// Called when an accept_ack is received, the learner will update it's status
+// for that instance and afterward check if the instance is closed
 static void handle_accept_ack(short int acceptor_id, accept_ack * aa) {
     //Keep track of highest seen instance id
     if(aa->iid > highest_iid_seen) {
         highest_iid_seen = aa->iid;
     }
     
-    //Already closed and delivered, drop
+    //Already closed and delivered, ignore message
     if(aa->iid <= current_iid) {
         LOG(DBG, ("Dropping accept_ack for already delivered iid:%lu\n", aa->iid));
         return;
     }
     
-    //We are late w.r.t the current iid, drop
+    //We are late w.r.t the current iid, ignore message
+    // (The instence received is too ahead and will overwrite something)
     if(aa->iid >= current_iid + LEARNER_ARRAY_SIZE) {
         LOG(DBG, ("Dropping accept_ack for iid:%lu, too far in future\n", aa->iid));
         return;
@@ -253,11 +288,13 @@ static void handle_accept_ack(short int acceptor_id, accept_ack * aa) {
     inst_info * ii = GET_LEA_INSTANCE(aa->iid);
     int relevant = lea_update_state(ii, acceptor_id, aa);
     if(!relevant) {
+        //Not really interesting (i.e. a duplicate message)
         LOG(DBG, ("Learner discarding learn for iid:%lu\n", aa->iid));
         return;
     }
-
-    //Check if instance can be declared closed
+    
+    // Message contained some relevant info, 
+    // check if instance can be declared closed
     int closed = lea_check_quorum(ii);
     if(!closed) {
         LOG(DBG, ("Not yet a quorum for iid:%lu\n", aa->iid));
@@ -265,17 +302,18 @@ static void handle_accept_ack(short int acceptor_id, accept_ack * aa) {
     }
 
     //If the closed instance is last delivered + 1
-    //Deliver it (and the following if already closed)
+    //Deliver it (and the followings if already closed)
     if (aa->iid == current_iid+1) {
         lea_deliver_next_closed(aa->iid);
     }
 }
 
-//Iterate over the accept_ack inside an accept_ack_batch
+// Called when an accept_ack_batch is received
 static void handle_accept_ack_batch(accept_ack_batch* aab) {
     size_t data_offset;
     accept_ack * aa;
     
+    //FIXME: following two lines are redundant
     data_offset = 0;
     aa = (accept_ack*) &aab->data[data_offset];
 
@@ -288,6 +326,7 @@ static void handle_accept_ack_batch(accept_ack_batch* aab) {
     }    
 }
 
+// Invoked by libevent when a new message was received
 static void lea_handle_newmsg(int sock, short event, void *arg) {
     //Make the compiler happy!
     UNUSED_ARG(sock);
@@ -297,15 +336,13 @@ static void lea_handle_newmsg(int sock, short event, void *arg) {
     assert(sock == for_learner->sock);
 
     //Read and validate next message from socket
-    int valid = udp_read_next_message(for_learner);
-    
+    int valid = udp_read_next_message(for_learner);    
     if (valid < 0) {
         printf("Dropping invalid learner message\n");
         return;
     }
     
     paxos_msg * msg = (paxos_msg*) &for_learner->recv_buffer;
-
     switch(msg->type) {
         case accept_acks: {
             handle_accept_ack_batch((accept_ack_batch*) msg->data);
@@ -321,6 +358,8 @@ static void lea_handle_newmsg(int sock, short event, void *arg) {
 /*-------------------------------------------------------------------------*/
 // Initialization
 /*-------------------------------------------------------------------------*/
+
+//Initialize records array (circular buffer)
 static int init_lea_structs() {
     // Clear the state array
     memset(learner_state, 0, (sizeof(inst_info) * LEARNER_ARRAY_SIZE));
@@ -331,6 +370,7 @@ static int init_lea_structs() {
     return 0;
 }
 
+//Initializes socket managers and relative events
 static int init_lea_network() {
     
     // Send buffer for talking to acceptors
@@ -352,10 +392,9 @@ static int init_lea_network() {
     return 0;
 }
 
+//Set up the first timer for hole checking
 static int 
 init_lea_timers() {
-    
-    //Set up the first timer for hole checking
     evtimer_set(&hole_check_event, lea_hole_check, NULL);
 	evutil_timerclear(&hole_check_interval);
 	hole_check_interval.tv_sec = LEARNER_HOLECHECK_INTERVAL_S;
@@ -368,7 +407,10 @@ init_lea_timers() {
     return 0;
 }
 
-static void init_lea_failure(char * msg) {
+//Invoked when learner init fails. Sets the state to error and 
+// wakes up the thread that called learner_init
+static void 
+init_lea_failure(char * msg) {
     //Init failed for some reason
     printf("Learner init error: %s\n", msg);
     
@@ -380,17 +422,23 @@ static void init_lea_failure(char * msg) {
     pthread_mutex_unlock(&ready_lock);
 }
 
-static void init_lea_signal_ready() {
+//Invoked when learner init completes successfully. Sets the state 
+// to error and wakes up the thread that called learner_init
+static void 
+init_lea_signal_ready() {
+    LOG(DBG, ("Learner thread setting status to ready\n"));
     //Init completed successfully, wake up
     //the thread that called learner_init
-    LOG(DBG, ("Learner thread setting status to ready\n"));
     pthread_mutex_lock(&ready_lock);
     learner_ready = LEARNER_READY;
     pthread_cond_signal(&ready_cond);
     pthread_mutex_unlock(&ready_lock);
 }
 
-static void* init_learner_thread(void* arg) {
+//This function is invoked by libevent in a new thread. It initializes the learner, 
+// and starts the libevent loop (which never returns)
+static void* 
+init_learner_thread(void* arg) {
     //The deliver callback cannot be null
     //(why starting a learner otherwise?)
     delfun = (deliver_function) arg;
@@ -433,22 +481,26 @@ static void* init_learner_thread(void* arg) {
     }
     
     // Signal client, learner is ready
+    //FIXME: should set up a timer for this purpose, instead of doing it directly
     init_lea_signal_ready();
 
-    // Start thread that calls event_dispatch()
-    // and never returns
+    // Start the libevent loop, should never return
     LOG(DBG, ("Learner thread ready, starting libevent loop\n"));
     event_dispatch();
     printf("libeven loop terminated\n");
     return NULL;
 }
 
-static int init_lea_wait_ready() {
+// This function waits until the learner status is set 
+// (to 'ready' or to 'error') and returns the corresponding value
+static int 
+init_lea_wait_ready() {
     int status;
     
     pthread_mutex_lock(&ready_lock);
     
     while(1) {
+        //Wait for a signal
         pthread_cond_wait(&ready_cond, &ready_lock);
         status = learner_ready;
 
@@ -471,6 +523,10 @@ static int init_lea_wait_ready() {
     return status;
 }
 
+/*-------------------------------------------------------------------------*/
+// Public functions (see libpaxos.h for more details)
+/*-------------------------------------------------------------------------*/
+
 int learner_init(deliver_function f, custom_init_function cif) {
     // Start learner (which starts event_dispatch())
     custom_init = cif;
@@ -490,6 +546,7 @@ int learner_init(deliver_function f, custom_init_function cif) {
     return 0;
 }
 
+//TODO: comment or categorize...
 void learner_suspend() {
     //Remove active events
     event_del(&learner_msg_event);

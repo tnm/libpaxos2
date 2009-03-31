@@ -17,24 +17,31 @@ BDB Forums @ Oracle
 
 #include "libpaxos_priv.h"
 
+//DB env handle, DB handle, Transaction handle 
 static DB_ENV *dbenv;
 static DB *dbp;
 static DB_TXN *txn;
 
+//Buffer to read/write current record
 static char record_buf[MAX_UDP_MSG_SIZE];
 static acceptor_record * record_buffer = (acceptor_record*)record_buf;
 
+//Set to 1 if init should do a recovery
 static int do_recovery = 0;
 
+//Invoked before stablestorage_init, sets recovery mode on
+// the acceptor will try to recover a DB rather than creating a new one
 void stablestorage_do_recovery() {
     printf("Acceptor in recovery mode\n");
     do_recovery = 1;
 }
 
+//Initializes the underlying stable storage
 int stablestorage_init(int acceptor_id) {
     int result;
     int flags = 0;
     
+    //Create environment handle
     result = db_env_create(&dbenv, 0);
     if (result != 0) {
         printf("DB_ENV creation failed: %s\n", db_strerror(result));
@@ -42,8 +49,8 @@ int stablestorage_init(int acceptor_id) {
     }
     dbenv->set_errfile(dbenv, stdout);	
 
-    // flags |= DB_AUTO_COMMIT;
-    flags |= BDB_TX_MODE; //defined in paxos_config.h
+    //defined in paxos_config.h, RECNO or BTREE
+    flags |= BDB_TX_MODE; 
     
     result = dbenv->set_flags(dbenv, flags, 1);
     if (result != 0) {
@@ -51,22 +58,26 @@ int stablestorage_init(int acceptor_id) {
         return -1;
     }
 
+    //Set in-memory logging (no durability!)
     // result = dbenv->log_set_config(dbenv, DB_LOG_IN_MEMORY, 1);
     // assert(result == 0);
     
+    //Set log in-memory size
     // result = dbenv->set_lg_bsize(dbenv, LOG_BUF_SIZE);
     // assert(result == 0);
     
+    //Set the size of the memory cache
     // result = dbenv->set_cachesize(dbenv, 0, MEM_CACHE_SIZE, 1);
     // assert(result == 0);
 
+    //Check if the environment dir exists
     char db_env_path[512];
     sprintf(db_env_path, ACCEPTOR_DB_PATH);
     LOG(VRB, ("Opening env in: %s\n", db_env_path));
     
     struct stat sb;
     if (stat(db_env_path, &sb) != 0) {
-        //Env dir does not exist
+        //Dir does not exist,
         //create it with rwx for owner
         if (mkdir(db_env_path, S_IRWXU) != 0) {
             printf("Failed to create env dir %s: %s\n", db_env_path, strerror(errno));
@@ -77,12 +88,15 @@ int stablestorage_init(int acceptor_id) {
     flags = 0;
     //Create and for this process only
     flags |= (DB_CREATE | DB_PRIVATE); 
-    //Transactional storage
+    //Transactional storage for a single thread
     flags |= (DB_INIT_LOG | DB_INIT_TXN | DB_INIT_MPOOL); 
 
+    //Add this flag if this acceptor is recovering 
+    //from a crash rather than starting "fresh"
     if(do_recovery)
         flags |= DB_RECOVER;
     
+    //Open the DB environment
     result = dbenv->open(dbenv, 
         db_env_path,            /* Environment directory */
         flags,                  /* Open flags */
@@ -92,13 +106,14 @@ int stablestorage_init(int acceptor_id) {
         return -1;
     }
 
-
+    //Create the DB file
     result = db_create(&dbp, dbenv, 0);
     if (result != 0) {
         printf("db_create failed: %s\n", db_strerror(result));
         return -1;
     }
-
+    
+    //Set page size for this db
     // result = dbp->set_pagesize(dbp, pagesize);
     // assert(result  == 0);
 
@@ -106,14 +121,15 @@ int stablestorage_init(int acceptor_id) {
     sprintf(db_filename, ACCEPTOR_DB_FNAME);
     LOG(VRB, ("Opening db file %s/%s\n", db_env_path, db_filename));    
     
-    //Open the database
     flags = 0;    
     //Create if does not exist
     flags |= DB_CREATE;
-    //Drop current content of file
+    //Drop current content of file, 
+    // unless we are in recovery mode
     if(!do_recovery)
         flags |= DB_TRUNCATE;
 
+    //Open the DB file
     result = dbp->open(dbp,
         NULL,                   /* Transaction pointer */
         db_filename,            /* On-disk file that holds the database. */
@@ -121,7 +137,6 @@ int stablestorage_init(int acceptor_id) {
         ACCEPTOR_ACCESS_METHOD, /* Database access method */
         flags,                  /* Open flags */
         0);                     /* Default file permissions */
-
     if(result != 0) {
         printf("DB open failed: %s\n", db_strerror(result));
         return -1;
@@ -130,7 +145,7 @@ int stablestorage_init(int acceptor_id) {
     return 0;
 }
 
-
+//Safely closes the underlying stable storage
 int stablestorage_shutdown() {
     int result = 0;
     
@@ -146,29 +161,30 @@ int stablestorage_shutdown() {
         result = -1;
     }
  
-    LOG(VRB, ("DB close completed\n"));
-    
+    LOG(VRB, ("DB close completed\n"));  
     return result;
 }
 
+//Begins a new transaction in the stable storage
 void 
 stablestorage_tx_begin() {
-    //Begin a new transaction
     int result;
     result = dbenv->txn_begin(dbenv, NULL, &txn, 0);
     assert(result == 0);
 }
 
+//Commits the transaction to stable storage
 void 
 stablestorage_tx_end() {
-    //End current transaction, 
-    // since it's either read only or write only
-    // and there is no concurrency, should always commit
     int result;
+    //Since it's either read only or write only
+    // and there is no concurrency, should always commit!
     result = txn->commit(txn, 0);
     assert(result == 0);
 }
 
+//Retrieves an instance record from stable storage
+// returns null if the instance does not exist yet
 acceptor_record * 
 stablestorage_get_record(iid_t iid) {
     int flags, result;
@@ -187,13 +203,15 @@ stablestorage_get_record(iid_t iid) {
     //Force copy to the specified buffer
     dbdata.flags = DB_DBT_USERMEM;
 
+    //Read the record
     flags = 0;
     result = dbp->get(dbp, 
         txn, 
         &dbkey, 
         &dbdata, 
         flags);
-        
+    
+    //FIXME: improper return check, see BDB doc
     if(result == 1 || result == 1) {
         //Record does not exist
         LOG(DBG, ("The record for iid:%lu does not exist\n", iid));
@@ -210,6 +228,8 @@ stablestorage_get_record(iid_t iid) {
     return record_buffer;
 }
 
+//Save a valid accept request, the instance may be new (no record)
+// or old with a smaller ballot, in both cases it creates a new record
 acceptor_record * 
 stablestorage_save_accept(accept_req * ar) {
     int flags, result;
@@ -234,6 +254,7 @@ stablestorage_save_accept(accept_req * ar) {
     dbdata.data = record_buffer;
     dbdata.size = ACCEPT_ACK_SIZE(record_buffer);
     
+    //Store permanently
     flags = 0;
     result = dbp->put(dbp, 
         txn, 
@@ -245,11 +266,14 @@ stablestorage_save_accept(accept_req * ar) {
     return record_buffer;
 }
 
+//Save a valid prepare request, the instance may be new (no record)
+// or old with a smaller ballot
 acceptor_record * 
 stablestorage_save_prepare(prepare_req * pr, acceptor_record * rec) {
     int flags, result;
     DBT dbkey, dbdata;
-
+    
+    //No previous record, create a new one
     if (rec == NULL) {
         //Record does not exist yet
         rec = record_buffer;
@@ -259,7 +283,7 @@ stablestorage_save_prepare(prepare_req * pr, acceptor_record * rec) {
         rec->is_final = 0;
         rec->value_size = 0;
     } else {
-        //Record exists, just update the ballot
+    //Record exists, just update the ballot
         rec->ballot = pr->ballot;
     }
     
@@ -274,6 +298,7 @@ stablestorage_save_prepare(prepare_req * pr, acceptor_record * rec) {
     dbdata.data = record_buffer;
     dbdata.size = ACCEPT_ACK_SIZE(record_buffer);
     
+    //Store permanently
     flags = 0;
     result = dbp->put(dbp, 
         txn, 
