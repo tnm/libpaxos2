@@ -1,6 +1,7 @@
 #include <stdlib.h>
 #include <memory.h>
 #include <stdio.h>
+#include <assert.h>
 
 #include "libpaxos_priv.h"
 #include "paxos_udp.h"
@@ -55,8 +56,8 @@ void sendbuf_clear(udp_send_buffer * sb, paxos_msg_code type) {
 //Adds a prepare_ack to the current message (a prepare_ack_batch)
 void sendbuf_add_prepare_ack(udp_send_buffer * sb, acceptor_record * rec) {
     paxos_msg * m = (paxos_msg *) &sb->buffer;
-    // FIXME: add this check to all add_msg    assert(m->type == accept_acks);
-    
+    assert(m->type == prepare_acks);    
+
     prepare_ack_batch * pab = (prepare_ack_batch *)&m->data;
     
     size_t pa_size = (sizeof(prepare_ack) + rec->value_size);
@@ -85,8 +86,10 @@ void sendbuf_add_prepare_ack(udp_send_buffer * sb, acceptor_record * rec) {
 
 
 //Adds an accept_ack to the current message (an accept_ack_batch)
-void sendbuf_add_accept_ack(udp_send_buffer * sb, acceptor_record * rec) {
+void sendbuf_add_accept_ack(udp_send_buffer * sb, acceptor_record * rec) {    
     paxos_msg * m = (paxos_msg *) &sb->buffer;
+    assert(m->type == accept_acks);
+
     accept_ack_batch * aab = (accept_ack_batch *)&m->data;
     
     size_t aa_size = ACCEPT_ACK_SIZE(rec);
@@ -113,6 +116,7 @@ void sendbuf_add_accept_ack(udp_send_buffer * sb, acceptor_record * rec) {
 //Adds an repeat_req to the current message (an repeat_req_batch)
 void sendbuf_add_repeat_req(udp_send_buffer * sb, iid_t iid) {
     paxos_msg * m = (paxos_msg *) &sb->buffer;
+    assert(m->type == repeat_reqs);
 
     if(PAXOS_MSG_SIZE(m) + sizeof(iid_t) >= MAX_UDP_MSG_SIZE) {
         // Next iid to add does not fit, flush the current 

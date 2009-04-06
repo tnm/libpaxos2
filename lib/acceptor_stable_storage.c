@@ -211,8 +211,7 @@ stablestorage_get_record(iid_t iid) {
         &dbdata, 
         flags);
     
-    //FIXME: improper return check, see BDB doc
-    if(result == 1 || result == 1) {
+    if(result == DB_NOTFOUND || result == DB_KEYEMPTY) {
         //Record does not exist
         LOG(DBG, ("The record for iid:%lu does not exist\n", iid));
         return NULL;
