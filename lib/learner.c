@@ -53,6 +53,10 @@ static int learner_ready = LEARNER_STARTING;
 static pthread_mutex_t ready_lock = PTHREAD_MUTEX_INITIALIZER;
 static pthread_cond_t  ready_cond = PTHREAD_COND_INITIALIZER;
 static pthread_t learner_thread = NULL;
+struct event init_complete_event;
+
+//Timeval interval to schedule events as soon as possible
+struct timeval asap_interval = {0, 0};
 
 //Libevent handle
 static struct event_base * eb;
@@ -194,8 +198,7 @@ static void lea_deliver_next_closed() {
     accept_ack * aa;
     
     //If closed deliver it and all next closed
-    //FIXME: replace with IS_CLOSED(ii)
-    while(ii->final_value != NULL) {
+    while(IS_CLOSED(ii)) {
         assert(ii->iid == (current_iid + 1));
         aa = ii->final_value;
         
@@ -313,16 +316,14 @@ static void handle_accept_ack_batch(accept_ack_batch* aab) {
     size_t data_offset;
     accept_ack * aa;
     
-    //FIXME: following two lines are redundant
     data_offset = 0;
-    aa = (accept_ack*) &aab->data[data_offset];
 
     short int i;
     //Iterate over accept_ack messages in batch
     for(i = 0; i < aab->count; i++) {
+        aa = (accept_ack*) &aab->data[data_offset];
         handle_accept_ack(aab->acceptor_id, aa);
         data_offset += ACCEPT_ACK_SIZE(aa);
-        aa = (accept_ack*) &aab->data[data_offset];
     }    
 }
 
@@ -422,10 +423,15 @@ init_lea_failure(char * msg) {
     pthread_mutex_unlock(&ready_lock);
 }
 
-//Invoked when learner init completes successfully. Sets the state 
-// to error and wakes up the thread that called learner_init
-static void 
-init_lea_signal_ready() {
+//Invoked as first event of libevent loop, if learner init 
+// completes successfully. Sets the state to ready
+//  and wakes up the thread that called learner_init
+static void
+init_lea_success(int fd, short event, void *arg) {
+    UNUSED_ARG(fd);
+    UNUSED_ARG(event);
+    UNUSED_ARG(arg);
+
     LOG(DBG, ("Learner thread setting status to ready\n"));
     //Init completed successfully, wake up
     //the thread that called learner_init
@@ -434,6 +440,19 @@ init_lea_signal_ready() {
     pthread_cond_signal(&ready_cond);
     pthread_mutex_unlock(&ready_lock);
 }
+
+//Set up the first event to be executed ASAP, 
+// signaling that the initialization is complete
+static int
+init_lea_signal_ready() {
+    evtimer_set(&init_complete_event, init_lea_success, NULL);
+	if(event_add(&init_complete_event, &asap_interval) != 0) {
+	   printf("Error while adding lea successful init event\n");
+       return -1;
+   }
+   return 0;
+}
+
 
 //This function is invoked by libevent in a new thread. It initializes the learner, 
 // and starts the libevent loop (which never returns)
@@ -481,8 +500,10 @@ init_learner_thread(void* arg) {
     }
     
     // Signal client, learner is ready
-    //FIXME: should set up a timer for this purpose, instead of doing it directly
-    init_lea_signal_ready();
+    if(init_lea_signal_ready() != 0) {
+        init_lea_failure("Error in learner timers initialization\n");
+        return NULL;
+    }
 
     // Start the libevent loop, should never return
     LOG(DBG, ("Learner thread ready, starting libevent loop\n"));
