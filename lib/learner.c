@@ -365,6 +365,12 @@ static void lea_handle_newmsg(int sock, short event, void *arg) {
 
 //Initialize records array (circular buffer)
 static int init_lea_structs() {
+    // Check array size
+    if ((LEARNER_ARRAY_SIZE & (LEARNER_ARRAY_SIZE -1)) != 0) {
+        printf("Error: LEARNER_ARRAY_SIZE is not a power of 2\n");
+        return LEARNER_ERROR;
+    }
+    
     // Clear the state array
     memset(learner_state, 0, (sizeof(inst_info) * LEARNER_ARRAY_SIZE));
     size_t i;

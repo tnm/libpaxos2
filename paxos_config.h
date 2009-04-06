@@ -2,6 +2,12 @@
 #define _CONFIG_H_
 
 /*** PROTOCOL SETTINGS ***/
+
+/* 
+    TODO comment
+*/
+#define PROPOSER_PREEXEC_WIN_SIZE 100
+
 /* 
     TODO comment
 */
@@ -99,6 +105,13 @@
 
 
 /*** STRUCTURES SETTINGS ***/
+
+/* 
+   PROPOSER_ARRAY_SIZE needs to be bigger than
+   the PROPOSER_PREEXEC_WIN_SIZE
+   IMPORTANT: This must be a power of 2
+*/
+#define PROPOSER_ARRAY_SIZE 512
 
 /* 
    LEARNER_ARRAY_SIZE can be any size, to ensure proper
