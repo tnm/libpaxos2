@@ -368,7 +368,7 @@ static int init_lea_structs() {
     // Clear the state array
     memset(learner_state, 0, (sizeof(inst_info) * LEARNER_ARRAY_SIZE));
     size_t i;
-    for(i = 0; i < N_OF_ACCEPTORS; i++) {
+    for(i = 0; i < LEARNER_ARRAY_SIZE; i++) {
         lea_clear_instance_info(&learner_state[i]);
     }
     return 0;
