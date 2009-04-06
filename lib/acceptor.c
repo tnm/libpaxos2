@@ -303,29 +303,33 @@ acc_handle_newmsg(int sock, short event, void *arg) {
         }
     }
 }
-
 //The acceptor runs on top of a learner, if the learner is active
 // (ACCEPTOR_UPDATE_ON_DELIVER is defined), this is the function 
 // invoked when a value is delivered.
 // The acceptor overwrites his personal record with the delivered value
 // since it will never change again
 void 
-acc_deliver_callback(char * value, size_t size, int iid, int ballot, int proposer) {
+acc_deliver_callback(char * value, size_t size, iid_t iid, ballot_t ballot, int proposer) {
+    UNUSED_ARG(proposer);
+
+#ifndef ACCEPTOR_UPDATE_ON_DELIVER
     UNUSED_ARG(value);
     UNUSED_ARG(size);
     UNUSED_ARG(iid);
     UNUSED_ARG(ballot);
-    UNUSED_ARG(proposer);
-    #ifndef ACCEPTOR_UPDATE_ON_DELIVER
+
     //ACCEPTOR_UPDATE_ON_DELIVER not defined, 
     //this callback should not even be called!
     printf("Warning:%s invoked when ACCEPTOR_UPDATE_ON_DELIVER is undefined!\n", __func__);
-    return;
 
-    #else
-    printf("Acceptor update not implemented yet!\n");
-    //TODO
-    #endif
+#else
+    //Save permanently the value delivered, replacing the
+    // accept for this particular acceptor
+    //FIXME: Could append to next TX instead of doing a separate one
+    stablestorage_tx_begin();
+    stablestorage_save_final_value(value, size, iid, ballot);
+    stablestorage_tx_end();
+#endif
 }
 
 /*-------------------------------------------------------------------------*/

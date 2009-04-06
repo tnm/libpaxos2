@@ -9,8 +9,8 @@ typedef unsigned int ballot_t;
 typedef long unsigned int iid_t;
 
 // Type for function passed to the learner
-// Example void my_deliver_fun(char * value, size_t size, int iid, int ballot, int proposer)
-typedef void (* deliver_function)(char*, size_t, int, int, int);
+// Example void my_deliver_fun(char * value, size_t size, iid_t iid, ballot_t ballot, int proposer)
+typedef void (* deliver_function)(char*, size_t, iid_t, ballot_t, int);
 
 // Type for function passed to the learner, 
 // called by learner thread after it's normal initialization

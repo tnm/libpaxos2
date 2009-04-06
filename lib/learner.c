@@ -203,7 +203,10 @@ static void lea_deliver_next_closed() {
         aa = ii->final_value;
         
         //Deliver the value trough callback
-        delfun(aa->value, aa->value_size, current_iid, aa->ballot, -1);
+        short int proposer_id = aa->ballot % MAX_N_OF_PROPOSERS;
+        delfun(aa->value, aa->value_size, current_iid, aa->ballot, proposer_id);
+        
+        //Move to next instance
         current_iid++;
         
         //Clear the state

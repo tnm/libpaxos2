@@ -8,6 +8,16 @@
 #define N_OF_ACCEPTORS  3
 
 /* 
+    TODO comment
+*/
+#define N_OF_PROPOSERS  3
+
+/* 
+    TODO comment
+    Must be a power of 10
+*/
+#define MAX_N_OF_PROPOSERS  10
+/* 
     If ACCEPTOR_UPDATE_ON_DELIVER is defined, the acceptor is also a learner.
     Delivered values are written in stable storage (overwriting the status
     for this acceptor if any).

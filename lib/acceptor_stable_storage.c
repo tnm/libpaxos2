@@ -309,3 +309,44 @@ stablestorage_save_prepare(prepare_req * pr, acceptor_record * rec) {
     return record_buffer;
     
 }
+
+//Save the final value delivered by the underlying learner. 
+// The instance may be new or previously seen, in both cases 
+// this creates a new record
+acceptor_record * 
+stablestorage_save_final_value(char * value, size_t size, iid_t iid, ballot_t ballot) {
+
+    int flags, result;
+    DBT dbkey, dbdata;
+    
+    //Store as acceptor_record (== accept_ack)
+    record_buffer->iid = iid;
+    record_buffer->ballot = ballot;
+    record_buffer->value_ballot = ballot;
+    record_buffer->is_final = 1;
+    record_buffer->value_size = size;
+    memcpy(record_buffer->value, value, size);
+    
+    memset(&dbkey, 0, sizeof(DBT));
+    memset(&dbdata, 0, sizeof(DBT));
+
+    //Key is iid
+    dbkey.data = &iid;
+    dbkey.size = sizeof(iid_t);
+        
+    //Data is our buffer
+    dbdata.data = record_buffer;
+    dbdata.size = ACCEPT_ACK_SIZE(record_buffer);
+    
+    //Store permanently
+    flags = 0;
+    result = dbp->put(dbp, 
+        txn, 
+        &dbkey, 
+        &dbdata, 
+        0);
+
+    assert(result == 0);    
+    return record_buffer;
+
+}
