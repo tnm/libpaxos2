@@ -6,6 +6,66 @@
 #include "libpaxos_priv.h"
 #include "paxos_udp.h"
 
+//Calculate size of dynamic structure by iterating
+size_t prepare_ack_batch_size_calc(prepare_ack_batch * pab) {
+    size_t total_size = 0;
+    size_t offset = 0;
+    short int i;
+    
+    //Iterate over prepare_ack in batch
+    prepare_ack * pa;
+    for(i = 0; i < pab->count; i++) {
+        pa = (prepare_ack*) &pab->data[offset];
+        offset += PREPARE_ACK_SIZE(pa);
+    }
+    
+    //Add size of batch header
+    total_size = sizeof(prepare_ack_batch) + offset;
+
+    return total_size;
+    
+}
+
+//Calculate size of dynamic structure by iterating
+size_t accept_req_batch_size_calc(accept_req_batch * arb) {
+    size_t total_size = 0;
+    size_t offset = 0;
+    short int i;
+    
+    //Iterate over accept_req in batch
+    accept_req * ar;
+    for(i = 0; i < arb->count; i++) {
+        ar = (accept_req*) &arb->data[offset];
+        offset += ACCEPT_REQ_SIZE(ar);
+    }
+    
+    //Add size of batch header
+    total_size = sizeof(accept_req_batch) + offset;
+
+    return total_size;
+    
+}
+
+//Calculate size of dynamic structure by iterating
+size_t accept_ack_batch_size_calc(accept_ack_batch * aab) {
+    size_t total_size = 0;
+    size_t offset = 0;
+    short int i;
+    
+    //Iterate over accept_ack in batch
+    accept_ack * aa;
+    for(i = 0; i < aab->count; i++) {
+        aa = (accept_ack*) &aab->data[offset];
+        offset += ACCEPT_ACK_SIZE(aa);
+    }
+    
+    //Add size of batch header
+    total_size = sizeof(accept_ack_batch) + offset;
+
+    return total_size;
+    
+}
+
 // Do some "superficial" check on the received message, 
 // for example size should match the expected, proposer/acceptor IDs
 // should be within given bounds, etc
@@ -21,15 +81,47 @@ static int validate_paxos_msg(paxos_msg * m, size_t msg_size) {
     }
     
     switch(m->type) {
-        case accept_acks: {
-            accept_ack_batch * aa = (accept_ack_batch *)m->data;
-            //Acceptor id out of bounds
-            if(aa->acceptor_id < 0 || aa->acceptor_id >= N_OF_ACCEPTORS) {
-                printf("Invalida acceptor id:%d\n", aa->acceptor_id);
+        case prepare_reqs: {
+            prepare_req_batch * prb = (prepare_req_batch *)m->data;
+            //Proposer id out of bounds
+            if(prb->proposer_id < 0 || prb->proposer_id >= MAX_N_OF_PROPOSERS) {
+                printf("Invalida proposer id:%d\n", prb->proposer_id);
                 return -1;
             }
-            // expected_size += ACCEPT_ACK_BATCH_SIZE(aa);
-            expected_size += m->data_size;
+            expected_size += PREPARE_REQ_BATCH_SIZE(prb);
+        }
+        break;
+
+        case prepare_acks: {
+            prepare_ack_batch * pab = (prepare_ack_batch *)m->data;
+            //Acceptor id out of bounds
+            if(pab->acceptor_id < 0 || pab->acceptor_id >= N_OF_ACCEPTORS) {
+                printf("Invalida acceptor id:%d\n", pab->acceptor_id);
+                return -1;
+            }
+            expected_size += PREPARE_ACK_BATCH_SIZE(pab);
+        }
+        break;
+
+        case accept_reqs: {
+            accept_req_batch * arb = (accept_req_batch *)m->data;
+            //Proposer id out of bounds
+            if(arb->proposer_id < 0 || arb->proposer_id >= MAX_N_OF_PROPOSERS) {
+                printf("Invalida proposer id:%d\n", arb->proposer_id);
+                return -1;
+            }
+            expected_size += ACCEPT_REQ_BATCH_SIZE(arb);
+        }
+        break;
+        
+        case accept_acks: {
+            accept_ack_batch * aab = (accept_ack_batch *)m->data;
+            //Acceptor id out of bounds
+            if(aab->acceptor_id < 0 || aab->acceptor_id >= N_OF_ACCEPTORS) {
+                printf("Invalida acceptor id:%d\n", aab->acceptor_id);
+                return -1;
+            }
+            expected_size += ACCEPT_ACK_BATCH_SIZE(aab);
         }
         break;
         

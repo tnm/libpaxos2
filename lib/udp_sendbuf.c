@@ -14,7 +14,7 @@
 */
 
 //Prepares the send buffer for sending a message of the specific type
-void sendbuf_clear(udp_send_buffer * sb, paxos_msg_code type) {
+void sendbuf_clear(udp_send_buffer * sb, paxos_msg_code type, short int sender_id) {
 
     sb->dirty = 0;
 
@@ -25,18 +25,28 @@ void sendbuf_clear(udp_send_buffer * sb, paxos_msg_code type) {
     m->data_size = sizeof(paxos_msg);
     
     switch(type) {
+        
+        //Proposer
+        case prepare_reqs: {
+            m->data_size = sizeof(prepare_req_batch);
+            prepare_req_batch * prb = (prepare_req_batch *)&m->data;
+            prb->count = 0;
+            prb->proposer_id = sender_id;
+        } break;
 
         //Acceptor
         case prepare_acks: {
             m->data_size += sizeof(prepare_ack_batch);
             prepare_ack_batch * pab = (prepare_ack_batch *)&m->data;
-            pab->count = 0;    
+            pab->count = 0;
+            pab->acceptor_id = sender_id;
         } break;
         
         case accept_acks: {
             m->data_size += sizeof(accept_ack_batch);
             accept_ack_batch * aab = (accept_ack_batch *)&m->data;
             aab->count = 0;
+            aab->acceptor_id = sender_id;
         } break;
         
         //Learner
@@ -53,6 +63,29 @@ void sendbuf_clear(udp_send_buffer * sb, paxos_msg_code type) {
     }
 }
 
+//Adds a prepare_req to the current message (a prepare_req_batch)
+void sendbuf_add_prepare_req(udp_send_buffer * sb, iid_t iid, ballot_t ballot) {
+    paxos_msg * m = (paxos_msg *) &sb->buffer;
+    assert(m->type == prepare_reqs);
+
+    prepare_req_batch * prb = (prepare_req_batch *)&m->data;
+    
+    if(PAXOS_MSG_SIZE(m) + sizeof(prepare_req) >= MAX_UDP_MSG_SIZE) {
+        // Next propose_req to add does not fit, flush the current 
+        // message before adding it
+        sendbuf_flush(sb);
+        sendbuf_clear(sb, m->type, prb->proposer_id);
+    }
+    
+    prepare_req * pr = (prepare_req *)&prb->prepares[prb->count];
+    pr->iid = iid;
+    pr->ballot = ballot;
+    prb->count += 1;
+
+    sb->dirty = 1;
+    m->data_size += sizeof(prepare_req);
+    
+}
 //Adds a prepare_ack to the current message (a prepare_ack_batch)
 void sendbuf_add_prepare_ack(udp_send_buffer * sb, acceptor_record * rec) {
     paxos_msg * m = (paxos_msg *) &sb->buffer;
@@ -67,7 +100,7 @@ void sendbuf_add_prepare_ack(udp_send_buffer * sb, acceptor_record * rec) {
         // message before adding it
         stablestorage_tx_end();
         sendbuf_flush(sb);
-        sendbuf_clear(sb, prepare_acks);
+        sendbuf_clear(sb, m->type, pab->acceptor_id);
         stablestorage_tx_begin();
     }
     
@@ -99,7 +132,7 @@ void sendbuf_add_accept_ack(udp_send_buffer * sb, acceptor_record * rec) {
         // message before adding it
         stablestorage_tx_end();
         sendbuf_flush(sb);
-        sendbuf_clear(sb, accept_acks);
+        sendbuf_clear(sb, m->type, aab->acceptor_id);
         stablestorage_tx_begin();
     }
     
@@ -122,7 +155,7 @@ void sendbuf_add_repeat_req(udp_send_buffer * sb, iid_t iid) {
         // Next iid to add does not fit, flush the current 
         // message before adding it
         sendbuf_flush(sb);
-        sendbuf_clear(sb, prepare_reqs);
+        sendbuf_clear(sb, m->type, -1);
     }
     
     sb->dirty = 1;

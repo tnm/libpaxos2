@@ -105,7 +105,7 @@ acc_retransmit_latest_accept() {
     acceptor_record * rec;
     
     //Fetch the highest instance accepted
-    sendbuf_clear(to_learners, accept_acks);
+    sendbuf_clear(to_learners, accept_acks, this_acceptor_id);
     stablestorage_tx_begin();
     rec = stablestorage_get_record(highest_accepted_iid);
     
@@ -154,7 +154,7 @@ handle_prepare_req_batch(prepare_req_batch* prb) {
     LOG(DBG, ("Handling prepare for %d instances\n", prb->count));
 
     //Create empty prepare_ack_batch in buffer
-    sendbuf_clear(to_learners, prepare_acks);
+    sendbuf_clear(to_proposers, prepare_acks, this_acceptor_id);
 
     //Wrap changes in a  transaction
     stablestorage_tx_begin();
@@ -194,7 +194,7 @@ handle_accept_req_batch(accept_req_batch* arb) {
     LOG(DBG, ("Handling accept for %d instances\n", arb->count));
 
     //Create empty accept_ack_batch in buffer
-    sendbuf_clear(to_learners, accept_acks);
+    sendbuf_clear(to_learners, accept_acks, this_acceptor_id);
 
     //Wrap in a transaction
     stablestorage_tx_begin();
@@ -236,7 +236,7 @@ handle_repeat_req_batch(repeat_req_batch* rrb) {
     LOG(DBG, ("Repeating accept for %d instances\n", rrb->count));
 
     //Create empty accept_ack_batch in buffer
-    sendbuf_clear(to_learners, accept_acks);
+    sendbuf_clear(to_learners, accept_acks, this_acceptor_id);
 
     //Wrap in a (read-only) transaction
     stablestorage_tx_begin();

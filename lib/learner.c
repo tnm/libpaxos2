@@ -226,7 +226,7 @@ lea_send_repeat_request(iid_t from, iid_t to) {
     
     inst_info * ii;
     //Create empty repeat_request in buffer
-    sendbuf_clear(to_acceptors, repeat_reqs);
+    sendbuf_clear(to_acceptors, repeat_reqs, -1);
     
     for(i = from; i < to; i++) {
         //Request all non-closed in from...to range
