@@ -430,12 +430,21 @@ static int init_acceptor() {
 /*-------------------------------------------------------------------------*/
 
 int acceptor_init(int acceptor_id) {
+    // Check that n_of_acceptor is not too big
+    
+    if(N_OF_ACCEPTORS >= (sizeof(short int)*8)) {
+        printf("Error, this library currently supports at most:%d acceptors\n",
+            (int)(sizeof(short int)*8));
+        printf("(the number of bits in a 'short int', used as acceptor id)\n");
+        return -1;
+    }
     
     //Check id validity of acceptor_id
     if(acceptor_id < 0 || acceptor_id >= N_OF_ACCEPTORS) {
         printf("Invalid acceptor id:%d\n", acceptor_id);
         return -1;
-    }    
+    }
+    
     this_acceptor_id = acceptor_id;
     LOG(VRB, ("Acceptor %d starting...\n", this_acceptor_id));
     
