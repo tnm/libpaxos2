@@ -9,6 +9,7 @@
 #include "libpaxos.h"
 #include "libpaxos_priv.h"
 #include "paxos_udp.h"
+#include "values_handler.h"
 
 
 #define PROPOSER_ERROR (-1)
@@ -18,6 +19,10 @@ static iid_t current_iid = 1;
 
 //Unique identifier of this proposer
 short int this_proposer_id = -1;
+
+//Id of the current leader, proposer 0 starts as leader
+short int current_leader_id = 0;
+#define LEADER_IS_ME (this_proposer_id == current_leader_id)
 
 //UDP socket managers for sending
 static udp_send_buffer * to_acceptors;
@@ -44,6 +49,10 @@ typedef struct proposer_instance_info {
     size_t          value_size;
     char*           value;
     ballot_t        value_ballot;
+    
+    unsigned int    promises_bitvector;
+    unsigned int    promises_count;
+
 } inst_info;
 
 inst_info proposer_state[PROPOSER_ARRAY_SIZE];
@@ -55,7 +64,6 @@ inst_info proposer_state[PROPOSER_ARRAY_SIZE];
 struct phase1_info {
     unsigned int    pending_count;
     unsigned int    ready_count;
-    iid_t           lowest_open;
     iid_t           highest_open;
 };
 struct phase1_info p1_info;
@@ -82,8 +90,67 @@ pro_clear_instance_info(inst_info * ii) {
     ii->value_ballot = 0;
 }
 
+static void
+pro_save_prepare_ack(inst_info * ii, prepare_ack * pa, short int acceptor_id) {
+    
+    //Ack from already received!
+    if(ii->promises_bitvector & (1<acceptor_id)) {
+        LOG(DBG, ("Dropping duplicate promise from:%d, iid:%ld, \n", acceptor_id, ii->iid));
+        return;
+    }
+    
+    // promise is new
+    ii->promises_bitvector &= (1<acceptor_id);
+    ii->promises_count++;
+    LOG(DBG, ("Received valid promise from:%d, iid:%ld, \n", acceptor_id, ii->iid));
+    
+    //Promise contains no value
+    if(pa->value_size == 0) {
+        LOG(DBG, (" No value in promise\n"));
+        return;
+    }
+
+    //Promise contains a value
+    
+    //Our value has same or greater ballot
+    if(ii->value_ballot >= pa->value_ballot) {
+        //Keep the current value
+        LOG(DBG, (" Included value is ignored (cause:value_ballot)\n"));
+        return;
+    }
+    
+    //Ballot is greater but the value is actually the same
+    if ((ii->value_size == pa->value_size) && 
+        (memcmp(ii->value, pa->value, ii->value_size) == 0)) {
+        //Just update the value ballot
+        LOG(DBG, (" Included value is the same with higher value_ballot\n"));
+        ii->value_ballot = pa->value_ballot;
+        return;
+    }
+    
+    //Value should replace the one we have (if any)
+
+    //Previous value found
+    if(ii->value_size != 0) {
+        //Re-enqueue in values list, 
+        // will be sent in some future instance
+        LOG(DBG, (" Re-enqueuing currently assigned value\n"));
+        valhandler_push(ii->value, ii->value_size);
+    } else {
+        LOG(DBG, (" No previous value was assigned to this instance\n"));
+    }
+
+    //Save the received value 
+    ii->value = PAX_MALLOC(pa->value_size);
+    memcpy(ii->value, pa->value, pa->value_size);
+    ii->value_size = pa->value_size;
+    ii->value_ballot = pa->value_ballot;
+    LOG(DBG, (" Value in promise saved\n"));
+}
+
 void 
 pro_deliver_callback(char * value, size_t size, iid_t iid, ballot_t ballot, int proposer) {
+    LOG(DBG, ("Instance iid:%ld delivered to proposer\n", iid));
     current_iid = iid + 1;
 
     //TODO clear inst_info
@@ -91,23 +158,73 @@ pro_deliver_callback(char * value, size_t size, iid_t iid, ballot_t ballot, int 
 /*-------------------------------------------------------------------------*/
 // Event handlers
 /*-------------------------------------------------------------------------*/
-static void
-handle_prepare_ack(prepare_ack * pa) {
+
+//Returns 1 if the instance became ready, 0 otherwise
+static int
+handle_prepare_ack(prepare_ack * pa, short int acceptor_id) {
+    inst_info * ii = GET_PRO_INSTANCE(pa->iid);
+    // If not p1_pending, drop
+    if(ii->status != p1_pending) {
+        LOG(DBG, ("Promise dropped, iid:%ld not pending\n", pa->iid));
+        return 0;
+    }
     
+    // If not our ballot, drop
+    if(pa->ballot != ii->my_ballot) {
+        LOG(DBG, ("Promise dropped, iid:%ld not our ballot\n", pa->iid));
+        return 0;
+    }
+    
+    //Save the acknowledgement from this acceptor
+    //Takes also care of value that may be there
+    pro_save_prepare_ack(ii, pa, acceptor_id);
+    
+    //Not a majority yet for this instance
+    if(ii->promises_count < QUORUM) {
+        LOG(DBG, ("Not yet a quorum for iid:%ld\n", pa->iid));
+        return 0;
+    }
+    
+    //Quorum reached!
+    ii->status = p1_ready;
+    p1_info.pending_count -= 1;
+    p1_info.ready_count += 1;
+    //TODO anything else??
+    LOG(DBG, ("Quorum for iid:%ld reached\n", pa->iid));
+    
+    return 1;
 }
 
 static void
 handle_prepare_ack_batch(prepare_ack_batch* pab) {
+    
+    //Ignore if not the current leader
+    if(!LEADER_IS_ME) {
+        return;
+    }
+
+    LOG(DBG, ("Got %u promises from acceptor %d\n", 
+        pab->count, pab->acceptor_id));
+    
     prepare_ack * pa;
     size_t data_offset = 0;
-    short int i;
+    short int i, ready=0;
     
     for(i = 0; i < pab->count; i++) {
         pa = (prepare_ack *)&pab->data[data_offset];
-        handle_prepare_ack(pa);
+        ready += handle_prepare_ack(pa, pab->acceptor_id);
         data_offset += PREPARE_ACK_SIZE(pa);
     }
+    LOG(DBG, ("%d instances just completed phase 1.\n \
+            Status: p1_pending_count:%d, p1_ready_count:%d\n", 
+            ready, p1_info.pending_count, p1_info.ready_count));
 
+    
+    //Some instance completed phase 1
+    if(ready > 0) {
+        // try to send a value in phase 2
+        leader_open_instances_p2();
+    }
 }
 
 //This function is invoked when a new message is ready to be read
@@ -124,10 +241,10 @@ pro_handle_newmsg(int sock, short event, void *arg) {
     //Read the next message
     int valid = udp_read_next_message(for_proposer);
     if (valid < 0) {
-        printf("Dropping invalid acceptor message\n");
+        printf("Dropping invalid proposer message\n");
         return;
     }
-    
+
     //The message is valid, take the appropriate action
     // based on the type
     paxos_msg * msg = (paxos_msg*) &for_proposer->recv_buffer;
@@ -172,17 +289,7 @@ init_pro_network() {
 //Initialize timers
 static int 
 init_pro_timers() {
-    
-    //     //Sets the first acc_periodic_repeater invocation timeout
-    //     evtimer_set(&repeat_accept_event, acc_periodic_repeater, NULL);
-    // evutil_timerclear(&periodic_repeat_interval);
-    // periodic_repeat_interval.tv_sec = ACCEPTOR_REPEAT_INTERVAL;
-    //     periodic_repeat_interval.tv_usec = 0;
-    // if(event_add(&repeat_accept_event, &periodic_repeat_interval) != 0) {
-    //    printf("Error while adding first periodic repeater event\n");
-    //         return PROPOSER_ERROR;
-    // }
-    
+    // TODO remove?
     return 0;
 }
 
@@ -234,7 +341,7 @@ static int init_proposer() {
     
     //By default, proposer 0 starts as leader, 
     // later on the failure detector may change that
-    if(this_proposer_id == 0) {
+    if(LEADER_IS_ME) {
         if(leader_init() != 0) {
             printf("Proposer Leader init failed\n");
             return -1;

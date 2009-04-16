@@ -1,4 +1,4 @@
-SRCS 		= example_learner.c example_acceptor.c
+SRCS 		= example_learner.c example_acceptor.c example_proposer.c
 
 PROGRAMS	= $(subst .c,,$(SRCS))
 
