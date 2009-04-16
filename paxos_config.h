@@ -10,6 +10,12 @@
 
 /* 
     TODO comment
+    Must be smaller than PROPOSER_PREEXEC_WIN_SIZE
+*/
+#define PROPOSER_P2_CONCURRENCY 10
+
+/* 
+    TODO comment
     Unit is microseconds - i.e. 1500000 = 1.5 secs
 */
 #define P1_TIMEOUT_INTERVAL 3000000

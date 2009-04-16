@@ -33,29 +33,7 @@ static udp_receiver * for_proposer;
 //Event: Message received
 static struct event proposer_msg_event;
 
-typedef enum instance_status_e {
-    empty, 
-    p1_pending,
-    p1_ready,
-    p2_pending, 
-    p2_completed
-} i_status;
-
-//Structure used to store all info relative to a given instance
-typedef struct proposer_instance_info {
-    iid_t           iid;
-    i_status        status;
-    ballot_t        my_ballot;
-    size_t          value_size;
-    char*           value;
-    ballot_t        value_ballot;
-    
-    unsigned int    promises_bitvector;
-    unsigned int    promises_count;
-
-} inst_info;
-
-inst_info proposer_state[PROPOSER_ARRAY_SIZE];
+p_inst_info proposer_state[PROPOSER_ARRAY_SIZE];
 #define GET_PRO_INSTANCE(I) &proposer_state[((I) & (PROPOSER_ARRAY_SIZE-1))]
 
 #define FIRST_BALLOT (MAX_N_OF_PROPOSERS + this_proposer_id)
@@ -69,6 +47,7 @@ struct phase1_info {
 struct phase1_info p1_info;
 
 struct phase2_info {
+    iid_t next_unused_iid; //TODO init
 };
 struct phase2_info p2_info;
 
@@ -78,7 +57,7 @@ struct phase2_info p2_info;
 // Helpers
 /*-------------------------------------------------------------------------*/
 static void
-pro_clear_instance_info(inst_info * ii) {
+pro_clear_instance_info(p_inst_info * ii) {
     ii->iid = 0;
     ii->status = empty;
     ii->my_ballot = 0;
@@ -91,7 +70,7 @@ pro_clear_instance_info(inst_info * ii) {
 }
 
 static void
-pro_save_prepare_ack(inst_info * ii, prepare_ack * pa, short int acceptor_id) {
+pro_save_prepare_ack(p_inst_info * ii, prepare_ack * pa, short int acceptor_id) {
     
     //Ack from already received!
     if(ii->promises_bitvector & (1<acceptor_id)) {
@@ -130,14 +109,13 @@ pro_save_prepare_ack(inst_info * ii, prepare_ack * pa, short int acceptor_id) {
     
     //Value should replace the one we have (if any)
 
-    //Previous value found
-    if(ii->value_size != 0) {
-        //Re-enqueue in values list, 
-        // will be sent in some future instance
-        LOG(DBG, (" Re-enqueuing currently assigned value\n"));
-        valhandler_push(ii->value, ii->value_size);
-    } else {
-        LOG(DBG, (" No previous value was assigned to this instance\n"));
+    //Previous value found, it's not from
+    // the pending list, free it
+    if(ii->value_size != 0 &&
+        (ii->assigned_value == NULL ||
+        ii->assigned_value->value != ii->value)) {
+        PAX_FREE(ii->value);
+        LOG(DBG, (" Deleted old value (not from pending list)\n"));
     }
 
     //Save the received value 
@@ -162,7 +140,7 @@ pro_deliver_callback(char * value, size_t size, iid_t iid, ballot_t ballot, int 
 //Returns 1 if the instance became ready, 0 otherwise
 static int
 handle_prepare_ack(prepare_ack * pa, short int acceptor_id) {
-    inst_info * ii = GET_PRO_INSTANCE(pa->iid);
+    p_inst_info * ii = GET_PRO_INSTANCE(pa->iid);
     // If not p1_pending, drop
     if(ii->status != p1_pending) {
         LOG(DBG, ("Promise dropped, iid:%ld not pending\n", pa->iid));
@@ -308,7 +286,7 @@ init_pro_structs() {
     }
     
     // Clear the state array
-    memset(proposer_state, 0, (sizeof(inst_info) * PROPOSER_ARRAY_SIZE));
+    memset(proposer_state, 0, (sizeof(p_inst_info) * PROPOSER_ARRAY_SIZE));
     size_t i;
     for(i = 0; i < PROPOSER_ARRAY_SIZE; i++) {
         pro_clear_instance_info(&proposer_state[i]);

@@ -6,7 +6,7 @@
 #include "libpaxos.h"
 #include "paxos_config.h"
 #include "libpaxos_messages.h"
-
+#include "values_handler.h"
 /*
     Debug functions, used internally for testing and debug
 */
@@ -14,7 +14,32 @@
 // but leaves the underlying libevent loop running.
 void learner_suspend();
 
+int learner_is_closed(iid_t iid);
+
 typedef accept_ack acceptor_record;
+
+typedef enum instance_status_e {
+    empty, 
+    p1_pending,
+    p1_ready,
+    p2_pending, 
+    p2_completed
+} i_status;
+
+//Structure used to store all info relative to a given instance
+typedef struct proposer_instance_info {
+    iid_t           iid;
+    i_status        status;
+    ballot_t        my_ballot;
+    size_t          value_size;
+    char*           value;
+    ballot_t        value_ballot;
+    
+    unsigned int    promises_bitvector;
+    unsigned int    promises_count;
+    vh_value_wrapper * assigned_value;//TODO clear
+    struct timeval  p2_timeout;//TODO clear
+} p_inst_info;
 
 // #define PAXOS_MSG_SIZE(m) (sizeof(paxos_msg) + m->size)
 // 

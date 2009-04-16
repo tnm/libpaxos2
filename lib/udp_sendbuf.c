@@ -118,6 +118,33 @@ void sendbuf_add_prepare_ack(udp_send_buffer * sb, acceptor_record * rec) {
 
 }
 
+void sendbuf_add_accept_req(udp_send_buffer * sb, p_inst_info * ii) {
+    paxos_msg * m = (paxos_msg *) &sb->buffer;
+    assert(m->type == accept_reqs);
+
+    accept_req_batch * arb = (accept_req_batch *)&m->data;
+    
+    size_t ar_size = sizeof(accept_req) + ii->value_size;
+    
+    if(PAXOS_MSG_SIZE(m) + ar_size >= MAX_UDP_MSG_SIZE) {
+        // Next accept to add does not fit, flush the current 
+        // message before adding it
+        sendbuf_flush(sb);
+        sendbuf_clear(sb, m->type, arb->proposer_id);
+    }
+
+    accept_req * ar = (accept_req *)&m->data[m->data_size];
+    ar->iid = ii->iid;
+    ar->ballot = ii->my_ballot;
+    ar->value_size = ii->value_size;
+    memcpy(ar->value, ii->value, ii->value_size);
+    
+    sb->dirty = 1;
+    m->data_size += ar_size;
+    arb->count += 1;
+    
+}
+
 
 //Adds an accept_ack to the current message (an accept_ack_batch)
 void sendbuf_add_accept_ack(udp_send_buffer * sb, acceptor_record * rec) {    

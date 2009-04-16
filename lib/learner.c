@@ -23,7 +23,7 @@ typedef struct learner_instance_info {
     ballot_t        last_update_ballot;
     accept_ack*     acks[N_OF_ACCEPTORS];
     accept_ack*     final_value;
-} inst_info;
+} l_inst_info;
 
 //Highest instance for which a message was seen
 static iid_t highest_iid_seen = 1;
@@ -37,7 +37,7 @@ static iid_t current_iid = 1;
 static iid_t highest_iid_closed = 0;
 
 //Array (used as a circular buffer) to store instance infos
-static inst_info learner_state[LEARNER_ARRAY_SIZE];
+static l_inst_info learner_state[LEARNER_ARRAY_SIZE];
 
 //A custom initialization function to invoke after the normal initialization
 // Can be NULL
@@ -76,7 +76,7 @@ static udp_receiver * for_learner;
 /*-------------------------------------------------------------------------*/
 
 //Resets a given instance info
-static void lea_clear_instance_info(inst_info * ii) {
+static void lea_clear_instance_info(l_inst_info * ii) {
     //Reset all fields and free stored messages
     ii->iid = INST_INFO_EMPTY;
     ii->last_update_ballot = 0;
@@ -94,7 +94,7 @@ static void lea_clear_instance_info(inst_info * ii) {
 //Stores the accept_ack of a given acceptor in the corresponding record 
 // at the appropriate index
 // Assumes rec->acks[acc_id] is NULL already
-static void lea_store_accept_ack(inst_info * ii, short int acceptor_id, accept_ack * aa) {
+static void lea_store_accept_ack(l_inst_info * ii, short int acceptor_id, accept_ack * aa) {
     accept_ack * new_ack = PAX_MALLOC(ACCEPT_ACK_SIZE(aa));
     memcpy(new_ack, aa, ACCEPT_ACK_SIZE(aa));
     //Store message at appropriate index (acceptor_id)
@@ -106,7 +106,7 @@ static void lea_store_accept_ack(inst_info * ii, short int acceptor_id, accept_a
 
 //Tries to update the state based on the accept_ack received.
 //Returns 0 if the message was discarded because not relevant. 1 if the state changed.
-static int lea_update_state(inst_info * ii, short int acceptor_id, accept_ack * aa) {
+static int lea_update_state(l_inst_info * ii, short int acceptor_id, accept_ack * aa) {
     //First message for this iid
     if(ii->iid == INST_INFO_EMPTY) {
         LOG(DBG, ("Received first message for instance:%lu\n", aa->iid));
@@ -149,7 +149,7 @@ static int lea_update_state(inst_info * ii, short int acceptor_id, accept_ack * 
 //Checks if a given instance is closed, that is if a quorum of acceptor
 // accepted the same value+ballot
 //Returns 1 if the instance is closed, 0 otherwise
-static int lea_check_quorum(inst_info * ii) {
+static int lea_check_quorum(l_inst_info * ii) {
     size_t i, a_valid_index = -1, count = 0;
     accept_ack * curr_ack;
     
@@ -194,7 +194,7 @@ static int lea_check_quorum(inst_info * ii) {
 // Since other instances may be closed too (curr+1, curr+2), also tries to deliver them
 static void lea_deliver_next_closed() {
     //Get next instance (last delivered + 1)
-    inst_info * ii = GET_LEA_INSTANCE(current_iid + 1);
+    l_inst_info * ii = GET_LEA_INSTANCE(current_iid + 1);
     accept_ack * aa;
     
     //If closed deliver it and all next closed
@@ -224,7 +224,7 @@ static void
 lea_send_repeat_request(iid_t from, iid_t to) {
     iid_t i;
     
-    inst_info * ii;
+    l_inst_info * ii;
     //Create empty repeat_request in buffer
     sendbuf_clear(to_acceptors, repeat_reqs, -1);
     
@@ -291,7 +291,7 @@ static void handle_accept_ack(short int acceptor_id, accept_ack * aa) {
 
     //Message is within interesting bounds
     //Update the corresponding record
-    inst_info * ii = GET_LEA_INSTANCE(aa->iid);
+    l_inst_info * ii = GET_LEA_INSTANCE(aa->iid);
     int relevant = lea_update_state(ii, acceptor_id, aa);
     if(!relevant) {
         //Not really interesting (i.e. a duplicate message)
@@ -372,7 +372,7 @@ static int init_lea_structs() {
     }
     
     // Clear the state array
-    memset(learner_state, 0, (sizeof(inst_info) * LEARNER_ARRAY_SIZE));
+    memset(learner_state, 0, (sizeof(l_inst_info) * LEARNER_ARRAY_SIZE));
     size_t i;
     for(i = 0; i < LEARNER_ARRAY_SIZE; i++) {
         lea_clear_instance_info(&learner_state[i]);
