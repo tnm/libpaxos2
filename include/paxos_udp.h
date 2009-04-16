@@ -36,5 +36,6 @@ udp_receiver * udp_receiver_new(char* address_string, int port);
 int udp_read_next_message(udp_receiver * recv_info);
 int udp_receiver_destroy(udp_receiver * rec);
 
+void print_paxos_msg(paxos_msg * msg);
 
 #endif /* end of include guard: PAXOS_UDP_H_X98E254H */

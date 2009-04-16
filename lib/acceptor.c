@@ -173,7 +173,7 @@ handle_prepare_req_batch(prepare_req_batch* prb) {
         rec = acc_apply_prepare(pr, rec);
         //If accepted, send accept_ack
         if(rec != NULL) {
-            sendbuf_add_prepare_ack(to_learners, rec);
+            sendbuf_add_prepare_ack(to_proposers, rec);
         }
 
     }
@@ -181,7 +181,7 @@ handle_prepare_req_batch(prepare_req_batch* prb) {
     stablestorage_tx_end();
     
     //Flush the send buffer if there's something
-    sendbuf_flush(to_learners);
+    sendbuf_flush(to_proposers);
 
 }
 
@@ -430,12 +430,12 @@ static int init_acceptor() {
 /*-------------------------------------------------------------------------*/
 
 int acceptor_init(int acceptor_id) {
-    // Check that n_of_acceptor is not too big
     
-    if(N_OF_ACCEPTORS >= (sizeof(short int)*8)) {
+    // Check that n_of_acceptor is not too big
+    if(N_OF_ACCEPTORS >= (sizeof(unsigned int)*8)) {
         printf("Error, this library currently supports at most:%d acceptors\n",
-            (int)(sizeof(short int)*8));
-        printf("(the number of bits in a 'short int', used as acceptor id)\n");
+            (int)(sizeof(unsigned int)*8));
+        printf("(the number of bits in a 'unsigned int', used as acceptor id)\n");
         return -1;
     }
     

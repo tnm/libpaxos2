@@ -52,6 +52,12 @@ int acceptor_init_recover(int acceptor_id);
 //TODO should delegate close to libevent thread
 int acceptor_exit();
 
+/*
+    TODO comment
+    Return value is 0 if successful
+*/
+int proposer_init(int proposer_id);
+
 
 // /*
 //     (MTU) - 8 (multicast header) - 32 (biggest paxos header)

@@ -6,7 +6,19 @@
 /* 
     TODO comment
 */
-#define PROPOSER_PREEXEC_WIN_SIZE 100
+#define PROPOSER_PREEXEC_WIN_SIZE 50
+
+/* 
+    TODO comment
+    Unit is microseconds - i.e. 1500000 = 1.5 secs
+*/
+#define P1_TIMEOUT_INTERVAL 3000000
+
+/* 
+    TODO comment
+    Unit is microseconds - i.e. 1500000 = 1.5 secs
+*/
+#define P2_TIMEOUT_INTERVAL 1500000
 
 /* 
     TODO comment

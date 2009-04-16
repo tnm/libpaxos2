@@ -3,11 +3,11 @@
 */
 
 typedef enum pax_msg_code_e {
-    prepare_reqs,   //Phase 1a, P->A
-    prepare_acks,   //Phase 1b, A->P
-    accept_reqs,    //Phase 2a, P->A
-    accept_acks,    //Phase 2b, A->L
-    repeat_reqs     //For progress, L -> A
+    prepare_reqs=1, //Phase 1a, P->A
+    prepare_acks=2, //Phase 1b, A->P
+    accept_reqs=4,  //Phase 2a, P->A
+    accept_acks=8,  //Phase 2b, A->L
+    repeat_reqs=16  //For progress, L -> A
 } paxos_msg_code;
 
 typedef struct paxos_msg_t {
@@ -29,6 +29,7 @@ typedef struct prepare_req_t {
 
 //Phase 1b, prepare acknowledgement
 typedef struct prepare_ack_t {
+    iid_t iid;
     ballot_t ballot;
     ballot_t value_ballot;
     size_t value_size;

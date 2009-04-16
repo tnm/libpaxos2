@@ -14,7 +14,14 @@ int main (int argc, char const *argv[]) {
 
     signal(SIGINT, handle_cltr_c);
     
-    if (acceptor_init(0) != 0) {
+    if (argc != 2) {
+        printf("This program takes exactly one argument: the acceptor unique identifier\n");
+        exit(1);
+    }
+    
+    short int acceptor_id = atoi(argv[1]);
+    
+    if (acceptor_init(acceptor_id) != 0) {
         printf("Could not start the acceptor!\n");
         exit(1);
     }
@@ -25,8 +32,5 @@ int main (int argc, char const *argv[]) {
         sleep(1);
     }
 
-    //Makes the compiler happy....
-    argc = argc;
-    argv = argv;
     return 0;
 }

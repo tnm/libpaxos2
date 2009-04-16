@@ -41,6 +41,41 @@ int stablestorage_init(int acceptor_id) {
     int result;
     int flags = 0;
     
+    //Check if the environment dir exists
+    char db_env_path[512];
+    sprintf(db_env_path, ACCEPTOR_DB_PATH);
+    
+    struct stat sb;
+    int dir_exists = (stat(db_env_path, &sb) == 0);
+
+    //Previous DB exists, try to discard it
+    if(do_recovery) {
+        //Recovery, old DB not found
+        if(!dir_exists) {
+            printf("WARNING: Old DB not found when trying to recover!\n");
+            if (mkdir(db_env_path, S_IRWXU) != 0) {
+                printf("Failed to create env dir %s: %s\n", db_env_path, strerror(errno));
+                return -1;
+            }
+        }
+        LOG(VRB, ("Opening env in: %s [recovery mode]\n", db_env_path));   
+    } else {
+        //Not Recovery
+        if(dir_exists) {
+            //Delete the old DB if exists
+            LOG(VRB, ("Opening env in: %s [created empty]\n", db_env_path));        
+            if(remove(db_env_path)) {
+                printf("Failed to remove old db in %s\n", db_env_path);
+                return -1;
+            }
+        }
+        //Create new env dir
+        if (mkdir(db_env_path, S_IRWXU) != 0) {
+            printf("Failed to create env dir %s: %s\n", db_env_path, strerror(errno));
+            return -1;
+        }
+    }
+        
     //Create environment handle
     result = db_env_create(&dbenv, 0);
     if (result != 0) {
@@ -49,52 +84,27 @@ int stablestorage_init(int acceptor_id) {
     }
     dbenv->set_errfile(dbenv, stdout);	
 
-    //defined in paxos_config.h, RECNO or BTREE
-    flags |= BDB_TX_MODE; 
-    
-    result = dbenv->set_flags(dbenv, flags, 1);
+    //Durability mode, see paxos_config.h
+    result = dbenv->set_flags(dbenv, BDB_TX_MODE, 1);
     if (result != 0) {
         printf("DB_ENV set_flags failed: %s\n", db_strerror(result));
         return -1;
     }
-
-    //Set in-memory logging (no durability!)
-    // result = dbenv->log_set_config(dbenv, DB_LOG_IN_MEMORY, 1);
-    // assert(result == 0);
-    
-    //Set log in-memory size
-    // result = dbenv->set_lg_bsize(dbenv, LOG_BUF_SIZE);
-    // assert(result == 0);
     
     //Set the size of the memory cache
     // result = dbenv->set_cachesize(dbenv, 0, MEM_CACHE_SIZE, 1);
     // assert(result == 0);
 
-    //Check if the environment dir exists
-    char db_env_path[512];
-    sprintf(db_env_path, ACCEPTOR_DB_PATH);
-    LOG(VRB, ("Opening env in: %s\n", db_env_path));
-    
-    struct stat sb;
-    if (stat(db_env_path, &sb) != 0) {
-        //Dir does not exist,
-        //create it with rwx for owner
-        if (mkdir(db_env_path, S_IRWXU) != 0) {
-            printf("Failed to create env dir %s: %s\n", db_env_path, strerror(errno));
-            return -1;
-        }
-    }
-
-    flags = 0;
-    //Create and for this process only
-    flags |= (DB_CREATE | DB_PRIVATE); 
-    //Transactional storage for a single thread
-    flags |= (DB_INIT_LOG | DB_INIT_TXN | DB_INIT_MPOOL); 
-
-    //Add this flag if this acceptor is recovering 
-    //from a crash rather than starting "fresh"
-    if(do_recovery)
-        flags |= DB_RECOVER;
+    // Env flags
+    flags =
+        DB_CREATE       |  /* Create if not existing */ 
+        DB_RECOVER      |  /* Run normal recovery. */
+        // DB_INIT_LOCK    |  /* Initialize the locking subsystem */
+        DB_INIT_LOG     |  /* Initialize the logging subsystem */
+        DB_INIT_TXN     |  /* Initialize the transactional subsystem. */
+        DB_PRIVATE      |  /* DB is for this process only */
+        // DB_THREAD       |  /* Cause the environment to be free-threaded */  
+        DB_INIT_MPOOL;     /* Initialize the memory pool (in-memory cache) */
     
     //Open the DB environment
     result = dbenv->open(dbenv, 
@@ -121,13 +131,10 @@ int stablestorage_init(int acceptor_id) {
     sprintf(db_filename, ACCEPTOR_DB_FNAME);
     LOG(VRB, ("Opening db file %s/%s\n", db_env_path, db_filename));    
     
-    flags = 0;    
-    //Create if does not exist
-    flags |= DB_CREATE;
-    //Drop current content of file, 
-    // unless we are in recovery mode
-    if(!do_recovery)
-        flags |= DB_TRUNCATE;
+    // DB flags
+    flags = 
+        DB_AUTO_COMMIT |    /*Wrap all operations in a TX*/
+        DB_CREATE;          /*Create if not existing*/
 
     //Open the DB file
     result = dbp->open(dbp,

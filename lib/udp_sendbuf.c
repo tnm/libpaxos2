@@ -21,8 +21,8 @@ void sendbuf_clear(udp_send_buffer * sb, paxos_msg_code type, short int sender_i
     paxos_msg * m = (paxos_msg *) &sb->buffer;
     m->type = type;
     
-    //Initial size is size of the paxos header
-    m->data_size = sizeof(paxos_msg);
+    //Initial size, paxos header not included
+    m->data_size = 0;
     
     switch(type) {
         
@@ -36,7 +36,7 @@ void sendbuf_clear(udp_send_buffer * sb, paxos_msg_code type, short int sender_i
 
         //Acceptor
         case prepare_acks: {
-            m->data_size += sizeof(prepare_ack_batch);
+            m->data_size = sizeof(prepare_ack_batch);
             prepare_ack_batch * pab = (prepare_ack_batch *)&m->data;
             pab->count = 0;
             pab->acceptor_id = sender_id;
@@ -86,6 +86,7 @@ void sendbuf_add_prepare_req(udp_send_buffer * sb, iid_t iid, ballot_t ballot) {
     m->data_size += sizeof(prepare_req);
     
 }
+
 //Adds a prepare_ack to the current message (a prepare_ack_batch)
 void sendbuf_add_prepare_ack(udp_send_buffer * sb, acceptor_record * rec) {
     paxos_msg * m = (paxos_msg *) &sb->buffer;
@@ -94,7 +95,6 @@ void sendbuf_add_prepare_ack(udp_send_buffer * sb, acceptor_record * rec) {
     prepare_ack_batch * pab = (prepare_ack_batch *)&m->data;
     
     size_t pa_size = (sizeof(prepare_ack) + rec->value_size);
-
     if(PAXOS_MSG_SIZE(m) + pa_size >= MAX_UDP_MSG_SIZE) {
         // Next propose_ack to add does not fit, flush the current 
         // message before adding it
@@ -104,17 +104,18 @@ void sendbuf_add_prepare_ack(udp_send_buffer * sb, acceptor_record * rec) {
         stablestorage_tx_begin();
     }
     
-    prepare_ack * pa = (prepare_ack *)&pab->data[m->data_size];
+    prepare_ack * pa = (prepare_ack *)&m->data[m->data_size];
+    pa->iid = rec->iid;
     pa->ballot = rec->ballot;
     pa->value_ballot = rec->value_ballot;
     pa->value_size = rec->value_size;
     
     //If there's no value this copies 0 bytes!
     memcpy(pa->value, rec->value, rec->value_size);
-    
     sb->dirty = 1;
     m->data_size += pa_size;
     pab->count += 1;
+
 }
 
 
@@ -137,7 +138,7 @@ void sendbuf_add_accept_ack(udp_send_buffer * sb, acceptor_record * rec) {
     }
     
 
-    accept_ack * aa = (accept_ack *)&aab->data[m->data_size];
+    accept_ack * aa = (accept_ack *)&m->data[m->data_size];
     memcpy(aa, rec, aa_size);
     
     sb->dirty = 1;
@@ -189,6 +190,7 @@ void sendbuf_flush(udp_send_buffer * sb) {
     if (cnt != (int)PAXOS_MSG_SIZE(m) || cnt == -1) {
         perror("failed to send message");
     }
+    LOG(DBG, ("Sent message of size %lu\n", PAXOS_MSG_SIZE(m)));
 }
 
 //Creates a new non-blocking UDP multicast sender for the given address/port

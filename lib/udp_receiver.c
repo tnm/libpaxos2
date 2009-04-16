@@ -145,6 +145,96 @@ static int validate_paxos_msg(paxos_msg * m, size_t msg_size) {
     return 0;
 }
 
+void print_paxos_msg(paxos_msg * msg) {
+    printf("[msg=%d size:%lu+%lu ", 
+        msg->type, sizeof(paxos_msg), msg->data_size);
+    
+    int i;
+    size_t offset = 0;
+    switch(msg->type) {
+        
+        case prepare_reqs: {
+            prepare_req_batch * prb = (prepare_req_batch *)msg->data;
+            printf("(prepare request batch)\n");
+            printf(" sender proposer:%d, count:%d\n", 
+                prb->proposer_id, prb->count);
+            prepare_req * pr;
+            for(i = 0; i < prb->count; i++) {
+                pr = (prepare_req *) &prb->prepares[i];
+                printf("\n (%d) iid:%lu bal:%u ", 
+                    (int)i, pr->iid, pr->ballot);
+            }
+
+        }
+        break;
+
+        case prepare_acks: {
+            prepare_ack_batch * pab = (prepare_ack_batch *)msg->data;
+            printf("(prepare acknowledgement batch)\n");
+            printf(" sender acceptor:%d, count:%d\n", 
+                pab->acceptor_id, pab->count);
+            prepare_ack * pa;
+            for(i = 0; i < pab->count; i++) {
+                pa = (prepare_ack *) &pab->data[offset];
+                printf("\n (%p)(%d) iid:%lu bal:%u vbal:%u val_size:%lu", 
+                    (void*)pa, (int)i, pa->iid, pa->ballot, 
+                    pa->value_ballot, pa->value_size);
+                offset += PREPARE_ACK_SIZE(pa);
+            }
+        }
+        break;
+
+        case accept_reqs: {
+            accept_req_batch * arb = (accept_req_batch *)msg->data;
+            printf("(accept request batch)\n");
+            printf(" sender proposer:%d, count:%d\n", 
+                arb->proposer_id, arb->count);
+            
+            accept_req * ar;
+            for(i = 0; i < arb->count; i++) {
+                ar = (accept_req *) &arb->data[offset];
+                printf("\n (%d) iid:%lu bal:%u val_size:%lu", 
+                    (int)i, ar->iid, ar->ballot, ar->value_size);
+                offset += ACCEPT_REQ_SIZE(ar);
+            }
+        }
+        break;
+        
+        case accept_acks: {
+            accept_ack_batch * aab = (accept_ack_batch *)msg->data;
+            printf("(accept acknowledgement batch)\n");
+            printf(" sender acceptor:%d, count:%d\n", 
+                aab->acceptor_id, aab->count);
+            accept_ack * aa;
+            for(i = 0; i < aab->count; i++) {
+                aa = (accept_ack *) &aab->data[offset];
+                printf("\n (%d) iid:%lu bal:%u vbal:%u val_size:%lu", 
+                    (int)i, aa->iid, aa->ballot, 
+                    aa->value_ballot, aa->value_size);
+                offset += ACCEPT_ACK_SIZE(aa);
+            }
+        }
+        break;
+        
+        case repeat_reqs: {
+            repeat_req_batch * rrb = (repeat_req_batch *)msg->data;
+            printf("(repeat request batch)\n");
+            printf(" count:%d\n", rrb->count);
+            for(i = 0; i < rrb->count; i++) {
+                printf("\n (%d) iid:%lu ", 
+                    (int)i, rrb->requests[i]);
+            }
+        }
+        break;
+
+        default: {
+            printf("Unknow paxos message type:%d\n", msg->type);
+        }
+    }
+    printf("]\n");
+}
+
+
 //Creates a new non-blocking UDP multicast receiver for the given address/port
 udp_receiver * udp_receiver_new(char* address_string, int port) {
     udp_receiver * rec = PAX_MALLOC(sizeof(udp_receiver));
