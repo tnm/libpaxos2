@@ -75,6 +75,13 @@ static udp_receiver * for_learner;
 // Helpers
 /*-------------------------------------------------------------------------*/
 
+//Used by the proposer to check for completion of phase 2
+int learner_is_closed(iid_t iid) {
+    l_inst_info * ii = GET_LEA_INSTANCE(iid);
+    assert(iid == ii->iid);
+    return IS_CLOSED(ii);
+}
+
 //Resets a given instance info
 static void lea_clear_instance_info(l_inst_info * ii) {
     //Reset all fields and free stored messages
