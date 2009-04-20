@@ -51,6 +51,9 @@ struct phase2_info {
 };
 struct phase2_info p2_info;
 
+//Required by leader
+static void pro_clear_instance_info(p_inst_info * ii);
+
 #include "proposer_leader.c"
 
 /*-------------------------------------------------------------------------*/
@@ -65,8 +68,16 @@ pro_clear_instance_info(p_inst_info * ii) {
     if(ii->value != NULL) {
         PAX_FREE(ii->value);
     }
-    ii->value = NULL;
     ii->value_ballot = 0;
+    
+    if(ii->assigned_value != NULL) {
+        if(ii->assigned_value->value != ii->value) {
+            PAX_FREE(ii->assigned_value->value);
+        }
+        PAX_FREE(ii->assigned_value);
+    }
+
+    ii->value = NULL;
 }
 
 static void
@@ -129,6 +140,12 @@ pro_save_prepare_ack(p_inst_info * ii, prepare_ack * pa, short int acceptor_id) 
 void 
 pro_deliver_callback(char * value, size_t size, iid_t iid, ballot_t ballot, int proposer) {
     LOG(DBG, ("Instance iid:%ld delivered to proposer\n", iid));
+    
+    //If leader, take the appropriate action
+    if(LEADER_IS_ME) {
+        leader_deliver(value, size, iid, ballot, proposer);
+    }
+    
     current_iid = iid + 1;
 
     //TODO clear inst_info

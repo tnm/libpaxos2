@@ -17,6 +17,12 @@ typedef void (* deliver_function)(char*, size_t, iid_t, ballot_t, int);
 // Example int my_custom_init()
 typedef int (* custom_init_function)(void);
 
+/* 
+    TODO comment
+*/
+#define SUBMIT_SUCCESSFUL 1
+#define SUBMIT_UNKNOW_RESULT 1
+#define SUBMIT_FAILED 3
 
 /*
     Starts a learner and returns when the initialization is complete.

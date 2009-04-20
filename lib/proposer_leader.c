@@ -316,7 +316,59 @@ leader_periodic_p2_check(int fd, short event, void *arg) {
     
     //Flush last message if any
     sendbuf_flush(to_acceptors);
+    
+    //TODO duplicate in leader deliver and periodic_p2_check!
+    //TODO embed check inside function?
+    if ((p2_info.next_unused_iid - current_iid) <= (PROPOSER_P2_CONCURRENCY/2)) {
+        leader_open_instances_p2();
+    }
+
 }
+
+/*-------------------------------------------------------------------------*/
+// Deliver callback
+/*-------------------------------------------------------------------------*/
+static void 
+leader_deliver(char * value, size_t size, iid_t iid, ballot_t ballot, int proposer) {
+    UNUSED_ARG(ballot);
+    UNUSED_ARG(proposer);
+    //Verify that the value is the one found or associated
+    p_inst_info * ii = GET_PRO_INSTANCE(iid);
+    
+    int same_val = (ii->value != NULL) && 
+        (ii->value_size == size) &&
+        (memcmp(value, ii->value, size) == 0);
+    
+    vh_value_wrapper * vw = ii->assigned_value;
+    int assigned_val = same_val &&
+        (ii->assigned_value != NULL) && 
+        (vw->value_size == size) &&
+        ((vw->value == ii->value) || 
+            memcmp(vw->value, ii->value, size) == 0);
+
+    if(assigned_val) {
+        vh_notify_client(SUBMIT_SUCCESSFUL, vw);
+    } else if(vw != NULL) {
+        vh_push_back_value(vw);
+        //If ref is the same
+        if(ii->value == vw->value) {
+            //Delete pointer otherwise freed in clear_ii below
+            ii->value = NULL;
+        }
+    }
+
+    //Clear current instance
+    pro_clear_instance_info(ii);
+    
+    //If enough instances are ready to 
+    // be opened, start phase2 for them
+    //TODO duplicate in leader deliver and periodic_p2_check!
+    //TODO embed check inside function?
+    if ((p2_info.next_unused_iid - current_iid) <= (PROPOSER_P2_CONCURRENCY/2)) {
+        leader_open_instances_p2();
+    }
+}
+
 
 /*-------------------------------------------------------------------------*/
 // Initialization/shutdown
@@ -361,6 +413,7 @@ leader_shutdown() {
     evtimer_del(&p1_check_event);
     evtimer_del(&p2_check_event);
         
+    //TODO for all opened answer clients
+    //TODO for all pending answer clients
     //TODO Clear inst_info array
-    
 }
