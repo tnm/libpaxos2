@@ -4,12 +4,15 @@
 typedef struct vh_value_wrapper_t {
     char * value;
     size_t value_size;
-    // vh_value_wrapper * next;
-    // vh_value_wrapper * prev;
+    struct vh_value_wrapper_t * next;
     // int client_socket;
 } vh_value_wrapper;
 
-void vh_push_back_value(vh_value_wrapper * vh);
+int vh_init();
+void vh_shutdown();
+
+void vh_enqueue_value(char * value, size_t value_size);
+void vh_push_back_value(vh_value_wrapper * vw);
 vh_value_wrapper * vh_get_next_pending();
 int vh_pending_list_size();
 void vh_notify_client(unsigned int result, vh_value_wrapper * vw);

@@ -78,8 +78,7 @@ static udp_receiver * for_learner;
 //Used by the proposer to check for completion of phase 2
 int learner_is_closed(iid_t iid) {
     l_inst_info * ii = GET_LEA_INSTANCE(iid);
-    assert(iid == ii->iid);
-    return IS_CLOSED(ii);
+    return ((iid == ii->iid) && IS_CLOSED(ii));
 }
 
 //Resets a given instance info
@@ -164,6 +163,11 @@ static int lea_check_quorum(l_inst_info * ii) {
     for(i = 0; i < N_OF_ACCEPTORS; i++) {
         curr_ack = ii->acks[i];
         
+        //No ack from this acceptor, skip
+        if(curr_ack == NULL) {
+            continue;
+        }
+        
         //Count the ones "agreeing" with the last added
         if(curr_ack->ballot == ii->last_update_ballot){
             a_valid_index = i;
@@ -195,18 +199,19 @@ static int lea_check_quorum(l_inst_info * ii) {
     
     //No quorum yet...
     return 0;
+
 }
 
 //Invoked when the current_iid is closed.
 // Since other instances may be closed too (curr+1, curr+2), also tries to deliver them
 static void lea_deliver_next_closed() {
     //Get next instance (last delivered + 1)
-    l_inst_info * ii = GET_LEA_INSTANCE(current_iid + 1);
+    l_inst_info * ii = GET_LEA_INSTANCE(current_iid);
     accept_ack * aa;
     
     //If closed deliver it and all next closed
     while(IS_CLOSED(ii)) {
-        assert(ii->iid == (current_iid + 1));
+        assert(ii->iid == current_iid);
         aa = ii->final_value;
         
         //Deliver the value trough callback
@@ -220,7 +225,7 @@ static void lea_deliver_next_closed() {
         lea_clear_instance_info(ii);
         
         //Go on and try to deliver next
-        ii = GET_LEA_INSTANCE(current_iid + 1);
+        ii = GET_LEA_INSTANCE(current_iid);
     }
 
 }
@@ -260,7 +265,7 @@ lea_hole_check(int fd, short event, void *arg) {
     //(i.e. i+1 closed, but i not closed yet)
     if(highest_iid_closed > current_iid) {
         LOG(VRB, ("Out of sync, highest closed:%lu, highest delivered:%lu\n", 
-            highest_iid_closed, current_iid));
+            highest_iid_closed, current_iid-1));
         //Ask retransmission to acceptors
         lea_send_repeat_request(current_iid, highest_iid_closed);
     }
@@ -284,7 +289,7 @@ static void handle_accept_ack(short int acceptor_id, accept_ack * aa) {
     }
     
     //Already closed and delivered, ignore message
-    if(aa->iid <= current_iid) {
+    if(aa->iid < current_iid) {
         LOG(DBG, ("Dropping accept_ack for already delivered iid:%lu\n", aa->iid));
         return;
     }
@@ -314,9 +319,9 @@ static void handle_accept_ack(short int acceptor_id, accept_ack * aa) {
         return;
     }
 
-    //If the closed instance is last delivered + 1
+    //If the closed instance is the current one,
     //Deliver it (and the followings if already closed)
-    if (aa->iid == current_iid+1) {
+    if (aa->iid == current_iid) {
         lea_deliver_next_closed(aa->iid);
     }
 }

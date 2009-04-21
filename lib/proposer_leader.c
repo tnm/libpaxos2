@@ -134,7 +134,11 @@ ldr_exec_reserved_p2(p_inst_info * ii) {
     if(vw == NULL) {
         //Send the accept with the reserved value
         sendbuf_add_accept_req(to_acceptors, ii);
+        LOG(VRB, ("Sending accept reserved instance %lu\n", ii->iid));
+        return;
     }
+    
+    //Found a value and we assigned one
     
     int diff_value = ((vw->value_size == ii->value_size) &&
         (memcmp(vw->value, ii->value, vw->value_size) == 0));
@@ -144,10 +148,12 @@ ldr_exec_reserved_p2(p_inst_info * ii) {
     if(diff_value) {
         vh_push_back_value(vw);
         ii->assigned_value = NULL;
+        LOG(VRB, ("Pushing back assigned value for reserved instance %lu\n", ii->iid));
     }
     
     //Send the accept with the reserved value
     sendbuf_add_accept_req(to_acceptors, ii);
+
 }
 
 static void
@@ -163,6 +169,8 @@ ldr_exec_fresh_p2(p_inst_info * ii) {
     
     //Send the accept with our value
     sendbuf_add_accept_req(to_acceptors, ii);
+    LOG(VRB, ("Sending accept for clear instance %lu\n", ii->iid));
+
 }
 
 static void
@@ -228,10 +236,10 @@ leader_open_instances_p2() {
                         <= PROPOSER_P2_CONCURRENCY) {
 
         ii = GET_PRO_INSTANCE(p2_info.next_unused_iid);
-        assert(ii->iid == p2_info.next_unused_iid);
         
         //Next unused is not ready, stop
-        if(ii->status != p1_ready) {
+        if(ii->status != p1_ready || ii->iid != p2_info.next_unused_iid) {
+            LOG(DBG, ("Next instance to use for P2 (iid:%lu) is not ready yet\n", p2_info.next_unused_iid));
             break;
         }
 
@@ -239,7 +247,8 @@ leader_open_instances_p2() {
         if(ii->value == NULL &&
             ii->assigned_value == NULL &&
             vh_pending_list_size() == 0) {
-            break;
+                LOG(DBG, ("No value to use for next instance\n"));
+                break;
         }
 
         //Executes phase2, sending an accept request
@@ -304,6 +313,7 @@ leader_periodic_p2_check(int fd, short event, void *arg) {
             ii->status = p2_completed;
             //The rest (i.e. answering client)
             // is done when the value is actually delivered
+            LOG(VRB, ("Instance %lu closed, waiting for deliver\n", i));
             continue;
         }
         
@@ -312,6 +322,7 @@ leader_periodic_p2_check(int fd, short event, void *arg) {
         ii->my_ballot = NEXT_BALLOT(ii->my_ballot);
         //Send prepare to acceptors
         sendbuf_add_prepare_req(to_acceptors, ii->iid, ii->my_ballot);  
+        LOG(VRB, ("Instance %lu restarts from phase 1\n", i));
     }
     
     //Flush last message if any
@@ -332,9 +343,22 @@ static void
 leader_deliver(char * value, size_t size, iid_t iid, ballot_t ballot, int proposer) {
     UNUSED_ARG(ballot);
     UNUSED_ARG(proposer);
+    LOG(DBG, ("Instance %lu delivered to Leader\n", iid));
+
     //Verify that the value is the one found or associated
     p_inst_info * ii = GET_PRO_INSTANCE(iid);
+    //Instance not even initialized, skip
+    if(ii->iid != iid) {
+        return;
+    }
     
+    if(ii->status == p1_pending) {
+        p1_info.pending_count -= 1;
+    }
+    
+    if(p2_info.next_unused_iid == iid) {
+        p2_info.next_unused_iid += 1;
+    }
     int same_val = (ii->value != NULL) && 
         (ii->value_size == size) &&
         (memcmp(value, ii->value, size) == 0);
@@ -378,6 +402,12 @@ static int
 leader_init() {
     LOG(VRB, ("Proposer %d promoted to leader\n", this_proposer_id));
 
+    //Initialize values handler
+    if(vh_init()!= 0) {
+        printf("Values handler initialization failed!\n");
+        return -1;
+    }
+
     //TODO check again later...
     p1_info.pending_count = 0;
     p1_info.ready_count = 0;
@@ -403,6 +433,8 @@ leader_init() {
     p2_check_interval.tv_sec = ((P2_TIMEOUT_INTERVAL/3) / 1000000);
     p2_check_interval.tv_usec = ((P2_TIMEOUT_INTERVAL/3) % 1000000);
     leader_set_p2_timeout();
+    
+    LOG(VRB, ("Leader is ready\n"));
     return 0;        
 }
 
@@ -416,4 +448,6 @@ leader_shutdown() {
     //TODO for all opened answer clients
     //TODO for all pending answer clients
     //TODO Clear inst_info array
+    
+    vh_shutdown();
 }

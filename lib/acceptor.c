@@ -44,7 +44,7 @@ static iid_t highest_accepted_iid = 0;
 static acceptor_record *
 acc_apply_accept(accept_req * ar, acceptor_record * rec) {
     //We already have a more recent ballot
-    if (rec != NULL && rec->ballot >= ar->ballot) {
+    if (rec != NULL && rec->ballot < ar->ballot) {
         LOG(DBG, ("Accept for iid:%lu dropped (ballots curr:%u recv:%u)\n", 
             ar->iid, rec->ballot, ar->ballot));
         return NULL;
@@ -130,7 +130,7 @@ acc_periodic_repeater(int fd, short event, void *arg)
     //If some value has been accepted,
     if (highest_accepted_iid > 0) {
         //Rebroadcast most recent (so that learners stay up-to-date)
-        LOG(DBG, ("re-seding most recent accept, iid:%lu", highest_accepted_iid));
+        LOG(DBG, ("re-sending most recent accept, iid:%lu\n", highest_accepted_iid));
         acc_retransmit_latest_accept();
     }
     

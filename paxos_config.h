@@ -6,13 +6,13 @@
 /* 
     TODO comment
 */
-#define PROPOSER_PREEXEC_WIN_SIZE 50
+#define PROPOSER_PREEXEC_WIN_SIZE 40
 
 /* 
     TODO comment
     Must be smaller than PROPOSER_PREEXEC_WIN_SIZE
 */
-#define PROPOSER_P2_CONCURRENCY 10
+#define PROPOSER_P2_CONCURRENCY 20
 
 /* 
     TODO comment

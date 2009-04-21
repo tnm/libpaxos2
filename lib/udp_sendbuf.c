@@ -33,6 +33,13 @@ void sendbuf_clear(udp_send_buffer * sb, paxos_msg_code type, short int sender_i
             prb->count = 0;
             prb->proposer_id = sender_id;
         } break;
+        
+        case accept_reqs: {
+            m->data_size = sizeof(accept_req_batch);
+            accept_req_batch * arb = (accept_req_batch *)&m->data;
+            arb->count = 0;
+            arb->proposer_id = sender_id;
+        } break;
 
         //Acceptor
         case prepare_acks: {
