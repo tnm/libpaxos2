@@ -330,9 +330,14 @@ leader_periodic_p2_check(int fd, short event, void *arg) {
     
     //TODO duplicate in leader deliver and periodic_p2_check!
     //TODO embed check inside function?
+    printf("A2\n");
     if ((p2_info.next_unused_iid - current_iid) <= (PROPOSER_P2_CONCURRENCY/2)) {
         leader_open_instances_p2();
+        printf("B2\n");
+
     }
+    
+    leader_set_p2_timeout();
 
 }
 
@@ -371,7 +376,7 @@ leader_deliver(char * value, size_t size, iid_t iid, ballot_t ballot, int propos
             memcmp(vw->value, ii->value, size) == 0);
 
     if(assigned_val) {
-        vh_notify_client(SUBMIT_SUCCESSFUL, vw);
+        vh_notify_client(0, vw);
     } else if(vw != NULL) {
         vh_push_back_value(vw);
         //If ref is the same
@@ -388,8 +393,10 @@ leader_deliver(char * value, size_t size, iid_t iid, ballot_t ballot, int propos
     // be opened, start phase2 for them
     //TODO duplicate in leader deliver and periodic_p2_check!
     //TODO embed check inside function?
+    printf("A\n");
     if ((p2_info.next_unused_iid - current_iid) <= (PROPOSER_P2_CONCURRENCY/2)) {
         leader_open_instances_p2();
+    printf("B\n");
     }
 }
 

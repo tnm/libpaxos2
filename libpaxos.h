@@ -1,7 +1,16 @@
 #ifndef _LIBPAXOS_H_
 #define _LIBPAXOS_H_
 #include <sys/types.h>
+#include "paxos_config.h"
 
+
+
+/* 
+    TODO comment
+    Max packet size minus largest header possible
+    (should be accept_ack_batch+accept_ack, around 30 bytes)
+*/
+#define PAXOS_MAX_VALUE_SIZE (MAX_UDP_MSG_SIZE - 40)
 /* 
     TODO comment
 */
@@ -16,13 +25,6 @@ typedef void (* deliver_function)(char*, size_t, iid_t, ballot_t, int);
 // called by learner thread after it's normal initialization
 // Example int my_custom_init()
 typedef int (* custom_init_function)(void);
-
-/* 
-    TODO comment
-*/
-#define SUBMIT_SUCCESSFUL 1
-#define SUBMIT_UNKNOW_RESULT 1
-#define SUBMIT_FAILED 3
 
 /*
     Starts a learner and returns when the initialization is complete.
@@ -64,6 +66,19 @@ int acceptor_exit();
 */
 int proposer_init(int proposer_id);
 
+/*
+    TODO comment
+*/
+typedef struct paxos_submit_handle_t {
+    void * sendbuf;
+}paxos_submit_handle;
+
+paxos_submit_handle * pax_submit_handle_init();
+
+/*
+    TODO comment
+*/
+int pax_submit_nonblock(paxos_submit_handle * h, char * value, size_t val_size);
 
 // /*
 //     (MTU) - 8 (multicast header) - 32 (biggest paxos header)

@@ -3,8 +3,12 @@
 // #include <netinet/in.h>
 // #include <arpa/inet.h>
 // 
+#include <time.h>
+#include <sys/time.h>
+
 #include "libpaxos.h"
 #include "paxos_config.h"
+
 #include "libpaxos_messages.h"
 #include "values_handler.h"
 /*

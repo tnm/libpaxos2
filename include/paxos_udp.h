@@ -28,10 +28,12 @@ void sendbuf_flush(udp_send_buffer * sb);
 
 void sendbuf_add_repeat_req(udp_send_buffer * sb, iid_t iid);
 void sendbuf_add_accept_ack(udp_send_buffer * sb, acceptor_record * rec);
-
 void sendbuf_add_prepare_req(udp_send_buffer * sb, iid_t iid, ballot_t ballot);
 void sendbuf_add_prepare_ack(udp_send_buffer * sb, acceptor_record * rec);
 void sendbuf_add_accept_req(udp_send_buffer * sb, p_inst_info * ii);
+void sendbuf_add_submit_val(udp_send_buffer * sb, char * value, size_t val_size);
+
+
 udp_receiver * udp_receiver_new(char* address_string, int port);
 int udp_read_next_message(udp_receiver * recv_info);
 int udp_receiver_destroy(udp_receiver * rec);

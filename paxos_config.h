@@ -1,5 +1,5 @@
-#ifndef _CONFIG_H_
-#define _CONFIG_H_
+#ifndef PAXOS_CONFIG_H_24LVFLYO
+#define PAXOS_CONFIG_H_24LVFLYO
 
 /*** PROTOCOL SETTINGS ***/
 
@@ -120,6 +120,7 @@
 #define PAXOS_LEARNERS_NET  "239.0.0.1", 6001
 #define PAXOS_ACCEPTORS_NET "239.0.0.1", 6002
 #define PAXOS_PROPOSERS_NET "239.0.0.1", 6003
+#define PAXOS_SUBMIT_NET    "239.0.0.1", 6004
 
 
 /*** STRUCTURES SETTINGS ***/
@@ -159,4 +160,4 @@
 #define MALLOC_TRACE_FILENAME "malloc_debug_trace.txt"
 
 
-#endif /* _CONFIG_H_ */
+#endif /* end of include guard: PAXOS_CONFIG_H_24LVFLYO */

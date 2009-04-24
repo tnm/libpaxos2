@@ -130,6 +130,11 @@ static int validate_paxos_msg(paxos_msg * m, size_t msg_size) {
             expected_size += REPEAT_REQ_BATCH_SIZE(rrb);
         }
         break;
+
+        case submit: {
+            expected_size += m->data_size;
+        }
+        break;
         
         default: {
             printf("Unknow paxos message type:%d\n", m->type);

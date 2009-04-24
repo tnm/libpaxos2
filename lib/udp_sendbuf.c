@@ -62,6 +62,11 @@ void sendbuf_clear(udp_send_buffer * sb, paxos_msg_code type, short int sender_i
             repeat_req_batch * rrb = (repeat_req_batch *)&m->data;
             rrb->count = 0;    
         } break;
+
+        //Client
+        case submit: {
+            m->data_size += 0;
+        } break;
             
         default: {            
             printf("Invalid message type %d for sendbuf_clear!\n", 
@@ -200,6 +205,17 @@ void sendbuf_add_repeat_req(udp_send_buffer * sb, iid_t iid) {
     rrb->requests[rrb->count] = iid;
     rrb->count += 1;
 }
+
+void sendbuf_add_submit_val(udp_send_buffer * sb, char * value, size_t val_size) {
+    paxos_msg * m = (paxos_msg *) &sb->buffer;
+    assert(m->type == submit);
+
+    sb->dirty = 1;
+    m->data_size += val_size;
+    memcpy(m->data, value, val_size);    
+    
+}
+
 
 //Flushes (sends) the current message in buffer, 
 // but only if the 'dirty' flag is set

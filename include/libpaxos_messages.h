@@ -1,3 +1,6 @@
+#ifndef LIBPAXOS_MESSAGES_H_HP8GZLGD
+#define LIBPAXOS_MESSAGES_H_HP8GZLGD
+
 /*
     Paxos message types
 */
@@ -7,7 +10,8 @@ typedef enum pax_msg_code_e {
     prepare_acks=2, //Phase 1b, A->P
     accept_reqs=4,  //Phase 2a, P->A
     accept_acks=8,  //Phase 2b, A->L
-    repeat_reqs=16  //For progress, L -> A
+    repeat_reqs=16, //For progress, L -> A
+    submit=32       //Clients to leader
 } paxos_msg_code;
 
 typedef struct paxos_msg_t {
@@ -100,3 +104,6 @@ typedef struct repeat_req_batch_t {
     iid_t requests[0];
 } repeat_req_batch;
 #define REPEAT_REQ_BATCH_SIZE(B) (sizeof(repeat_req_batch) + (sizeof(iid_t) * B->count))
+
+
+#endif /* end of include guard: LIBPAXOS_MESSAGES_H_HP8GZLGD */
