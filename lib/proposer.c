@@ -128,6 +128,9 @@ pro_save_prepare_ack(p_inst_info * ii, prepare_ack * pa, short int acceptor_id) 
         PAX_FREE(ii->value);
         LOG(DBG, (" Deleted old value (not from pending list)\n"));
     }
+    
+    //In case value is from pending list, no need to free
+    // ldr_exec_reserved_p2 will do what necessary later
 
     //Save the received value 
     ii->value = PAX_MALLOC(pa->value_size);
@@ -217,8 +220,12 @@ handle_prepare_ack_batch(prepare_ack_batch* pab) {
     
     //Some instance completed phase 1
     if(ready > 0) {
+        // Send a value for p2 timed-out that 
+        // had to go trough phase 1 again
+        leader_open_instances_p2_expired();
         // try to send a value in phase 2
-        leader_open_instances_p2();
+        // for new instances
+        leader_open_instances_p2_new();
     }
 }
 

@@ -252,6 +252,8 @@ handle_repeat_req_batch(repeat_req_batch* rrb) {
         //If a value was accepted, send accept_ack
         if(rec != NULL && rec->value_size > 0) {
             sendbuf_add_accept_ack(to_learners, rec);
+        } else {
+            LOG(DBG, ("Cannot retransmit iid:%lu no value accepted \n", rec->iid));
         }
     }
     

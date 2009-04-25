@@ -133,6 +133,7 @@ static int lea_update_state(l_inst_info * ii, short int acceptor_id, accept_ack 
             ii->iid, acceptor_id));
         //Save this accept_ack
         lea_store_accept_ack(ii, acceptor_id, aa);
+        ii->last_update_ballot = aa->ballot;
         return 1;
     }
     
@@ -141,7 +142,7 @@ static int lea_update_state(l_inst_info * ii, short int acceptor_id, accept_ack 
     
     //Already more recent info in the record, accept_ack is old
     if(prev_ack->ballot >= aa->ballot) {
-        LOG(DBG, ("Dropping accept_ack for iid:%lu, more stored ballot is newer or equal\n", aa->iid));
+        LOG(DBG, ("Dropping accept_ack for iid:%lu, stored ballot is newer or equal\n", aa->iid));
         return 0;
     }
     
@@ -149,6 +150,7 @@ static int lea_update_state(l_inst_info * ii, short int acceptor_id, accept_ack 
     LOG(DBG, ("Overwriting previous accept_ack for iid:%lu\n", aa->iid));
     PAX_FREE(prev_ack);
     lea_store_accept_ack(ii, acceptor_id, aa);
+    ii->last_update_ballot = aa->ballot;
     return 1;
 }
 

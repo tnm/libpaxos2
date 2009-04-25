@@ -12,19 +12,19 @@
     TODO comment
     Must be smaller than PROPOSER_PREEXEC_WIN_SIZE
 */
-#define PROPOSER_P2_CONCURRENCY 20
+#define PROPOSER_P2_CONCURRENCY 15
 
 /* 
     TODO comment
     Unit is microseconds - i.e. 1500000 = 1.5 secs
 */
-#define P1_TIMEOUT_INTERVAL 3000000
+#define P1_TIMEOUT_INTERVAL 2000000
 
 /* 
     TODO comment
     Unit is microseconds - i.e. 1500000 = 1.5 secs
 */
-#define P2_TIMEOUT_INTERVAL 1500000
+#define P2_TIMEOUT_INTERVAL 2000000
 
 /* 
     TODO comment
@@ -33,6 +33,7 @@
 
 /* 
     TODO comment
+    FIXME useless?
 */
 #define N_OF_PROPOSERS  3
 

@@ -16,6 +16,7 @@ struct timeval values_timeout;
 int min_val_size = 12;
 int max_val_size = PAXOS_MAX_VALUE_SIZE;
 int duration = 120;
+int print_step = 1;
 
 int delivered_count = 0;
 int submitted_count = 0;
@@ -78,6 +79,9 @@ static void
 submit_new_value(client_value_record * cvr) {
     
     submitted_count += 1;
+    if((submitted_count % print_step) == 0) {
+        printf("Submitted %u values\n", submitted_count);
+    }
     
     cvr->value_size = random_value_gen(cvr->value);
     
@@ -201,11 +205,11 @@ int main (int argc, char const *argv[])
     end_time = start_time + duration;
     
     //Default timeout for values
-    values_timeout.tv_sec = 5;
+    values_timeout.tv_sec = 15;
     values_timeout.tv_usec = 0;
     
     //Default timeout check interval
-    cl_periodic_interval.tv_sec = 2;
+    cl_periodic_interval.tv_sec = 5;
     cl_periodic_interval.tv_usec = 0;
 
     

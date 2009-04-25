@@ -4,10 +4,29 @@ struct timeval p1_check_interval;
 struct event p2_check_event;
 struct timeval p2_check_interval;
 
+
+struct leader_event_counters {
+    long unsigned int p1_timeout;
+};
+struct leader_event_counters lead_counters;
+
+#ifndef LEADER_EVENTS_UPDATE_INTERVAL
+//Leader events display is disabled
+static void empty_fun() {};
+#define COUNT_EVENT(E) empty_fun()
+#else
+//Leader events display is enabled
+#define COUNT_EVENT(E) (lead_counters.E += 1)
+#endif
 /*-------------------------------------------------------------------------*/
 // Phase 1 routines
 /*-------------------------------------------------------------------------*/
 
+static void leader_print_event_counters() {
+    printf("-----------------------------------------------\n");
+    printf("p1_timeout:%lu\n", lead_counters.p1_timeout);
+    printf("-----------------------------------------------\n");
+}
 static void
 leader_check_p1_pending() {
     iid_t iid_iterator;
@@ -15,7 +34,8 @@ leader_check_p1_pending() {
 
     //Create an empty prepare batch in send buffer
     sendbuf_clear(to_acceptors, prepare_reqs, this_proposer_id);
-
+    LOG(DBG, ("Checking pending phase 1 from %lu to %lu\n",
+        current_iid, p1_info.highest_open));
     for(iid_iterator = current_iid; 
         iid_iterator <= p1_info.highest_open; iid_iterator++) {
 
@@ -43,6 +63,8 @@ static void
 leader_open_instances_p1() {
     int active_count = p1_info.pending_count + p1_info.ready_count;
     
+    assert(active_count >= 0);
+    
     if(active_count >= (PROPOSER_PREEXEC_WIN_SIZE/2)) {
         //More than half are active/pending
         // Wait before opening more
@@ -54,6 +76,7 @@ leader_open_instances_p1() {
     
     //How many new instances to open now
     unsigned int to_open = PROPOSER_PREEXEC_WIN_SIZE - active_count;
+    assert(to_open >= (PROPOSER_PREEXEC_WIN_SIZE/2));
 
     iid_t i, curr_iid;
     p_inst_info * ii;
@@ -140,12 +163,12 @@ ldr_exec_reserved_p2(p_inst_info * ii) {
     
     //Found a value and we assigned one
     
-    int diff_value = ((vw->value_size == ii->value_size) &&
+    int same_value = ((vw->value_size == ii->value_size) &&
         (memcmp(vw->value, ii->value, vw->value_size) == 0));
 
     //The P1 value is not ours, 
     // send back ours to list and do P2 with the one received
-    if(diff_value) {
+    if(!same_value) {
         vh_push_back_value(vw);
         ii->assigned_value = NULL;
         LOG(VRB, ("Pushing back assigned value for reserved instance %lu\n", ii->iid));
@@ -218,10 +241,65 @@ leader_execute_p2(p_inst_info * ii, struct timeval * current_time) {
     ii->status = p2_pending;
 }
 
+// Scan trough p1_ready that have a value
+// assigned or found, execute phase2
 static void
-leader_open_instances_p2() {
+leader_open_instances_p2_expired() {
+    unsigned int count = 0;
+    
+    //Create a batch of accept requests
+    sendbuf_clear(to_acceptors, accept_reqs, this_proposer_id);
+    
+    //Save the time at which phase2 started
+    struct timeval time_now;
+    gettimeofday(&time_now, NULL);
+    
+    //Start new phase 2 for all instances found in status p1_ready
+    // if they are in the range below, phase2 timed-out and 
+    // we went successfully trough phase1 again
+    iid_t iid;
+    p_inst_info * ii;
+    
+    for(iid = current_iid; iid < p2_info.next_unused_iid; iid++) {
+    
+        ii = GET_PRO_INSTANCE(iid);
+        assert(ii->iid == iid);
+        
+        if(ii->status == p1_ready) {
+            assert(ii->value != NULL || ii->assigned_value != NULL);
+            //Executes phase2, sending an accept request
+            //Using the found value or getting the next from list
+            leader_execute_p2(ii, &time_now);
+
+            //Count opened
+            count += 1;
+        }
+    }
+    
+    //Count p1_ready that were consumed
+    p1_info.ready_count -= count;
+    
+    //Flush last accept_req batch
+    sendbuf_flush(to_acceptors);
+    
+    LOG(DBG, ("Opened %u old (timed-out) instances\n", count));
+    
+}
+
+
+static void
+leader_open_instances_p2_new() {
     unsigned int count = 0;
     p_inst_info * ii;
+
+    //For better batching, opening new instances at the end
+    // is preferred when more than 1 can be opened together
+    unsigned int max_active_p2 = p2_info.next_unused_iid - current_iid;
+    if ((max_active_p2) > (PROPOSER_P2_CONCURRENCY/2)) {
+        LOG(DBG, ("Skipping Phase2 open, %u may be still active\n", 
+            max_active_p2));
+        return;
+    }
 
     //Create a batch of accept requests
     sendbuf_clear(to_acceptors, accept_reqs, this_proposer_id);
@@ -319,6 +397,7 @@ leader_periodic_p2_check(int fd, short event, void *arg) {
         
         //Expired and not closed: must restart from phase 1
         ii->status = p1_pending;
+        p1_info.pending_count += 1;
         ii->my_ballot = NEXT_BALLOT(ii->my_ballot);
         //Send prepare to acceptors
         sendbuf_add_prepare_req(to_acceptors, ii->iid, ii->my_ballot);  
@@ -328,15 +407,10 @@ leader_periodic_p2_check(int fd, short event, void *arg) {
     //Flush last message if any
     sendbuf_flush(to_acceptors);
     
-    //TODO duplicate in leader deliver and periodic_p2_check!
-    //TODO embed check inside function?
-    printf("A2\n");
-    if ((p2_info.next_unused_iid - current_iid) <= (PROPOSER_P2_CONCURRENCY/2)) {
-        leader_open_instances_p2();
-        printf("B2\n");
-
-    }
+    //Open new instances
+    leader_open_instances_p2_new();
     
+    //Set next invokation of this function
     leader_set_p2_timeout();
 
 }
@@ -391,13 +465,7 @@ leader_deliver(char * value, size_t size, iid_t iid, ballot_t ballot, int propos
     
     //If enough instances are ready to 
     // be opened, start phase2 for them
-    //TODO duplicate in leader deliver and periodic_p2_check!
-    //TODO embed check inside function?
-    printf("A\n");
-    if ((p2_info.next_unused_iid - current_iid) <= (PROPOSER_P2_CONCURRENCY/2)) {
-        leader_open_instances_p2();
-    printf("B\n");
-    }
+    leader_open_instances_p2_new();
 }
 
 
