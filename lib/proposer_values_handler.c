@@ -143,5 +143,5 @@ vh_push_back_value(vh_value_wrapper * vw) {
 
 void vh_notify_client(unsigned int result, vh_value_wrapper * vw) {
     // TODO
-    printf("NOTIFY CLIENT!\n");
+    // printf("NOTIFY CLIENT!\n");
 }

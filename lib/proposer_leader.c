@@ -5,28 +5,51 @@ struct event p2_check_event;
 struct timeval p2_check_interval;
 
 
-struct leader_event_counters {
-    long unsigned int p1_timeout;
-};
-struct leader_event_counters lead_counters;
-
 #ifndef LEADER_EVENTS_UPDATE_INTERVAL
 //Leader events display is disabled
 static void empty_fun() {};
 #define COUNT_EVENT(E) empty_fun()
 #else
 //Leader events display is enabled
+struct leader_event_counters {
+    long unsigned int p1_timeout;
+    long unsigned int p2_timeout;
+};
+struct leader_event_counters lead_counters;
+struct event print_events_event;
+struct timeval print_events_interval;
 #define COUNT_EVENT(E) (lead_counters.E += 1)
+static void clear_event_counters() {
+    lead_counters.p1_timeout = 0;    
+    lead_counters.p2_timeout = 0;
+}
+
+static void 
+leader_print_event_counters(int fd, short event, void *arg) {
+    UNUSED_ARG(fd);
+    UNUSED_ARG(event);
+    UNUSED_ARG(arg);
+    printf("-----------------------------------------------\n");
+    printf("current_iid:%lu\n", current_iid);
+    printf("p1_timeout:%lu\n", lead_counters.p1_timeout);
+    printf("p2_timeout:%lu\n", lead_counters.p2_timeout);
+    printf("p1_info.pending_count:%u\n", p1_info.pending_count);
+    printf("p1_info.ready_count:%u\n", p1_info.ready_count);
+    printf("p1_info.highest_open:%lu\n", p1_info.highest_open);
+    printf("p2_info.next_unused_iid:%lu\n", p2_info.next_unused_iid);
+    printf("-----------------------------------------------\n");
+    
+    int ret;
+    ret = event_add(&print_events_event, &print_events_interval);
+    assert(ret == 0);
+
+}
 #endif
+
 /*-------------------------------------------------------------------------*/
 // Phase 1 routines
 /*-------------------------------------------------------------------------*/
 
-static void leader_print_event_counters() {
-    printf("-----------------------------------------------\n");
-    printf("p1_timeout:%lu\n", lead_counters.p1_timeout);
-    printf("-----------------------------------------------\n");
-}
 static void
 leader_check_p1_pending() {
     iid_t iid_iterator;
@@ -50,6 +73,8 @@ leader_check_p1_pending() {
             ii->my_ballot = NEXT_BALLOT(ii->my_ballot);
             //Send prepare to acceptors
             sendbuf_add_prepare_req(to_acceptors, ii->iid, ii->my_ballot);        
+
+            COUNT_EVENT(p1_timeout);
         }
     }    
 
@@ -314,6 +339,7 @@ leader_open_instances_p2_new() {
                         <= PROPOSER_P2_CONCURRENCY) {
 
         ii = GET_PRO_INSTANCE(p2_info.next_unused_iid);
+        assert(ii->assigned_value == NULL);
         
         //Next unused is not ready, stop
         if(ii->status != p1_ready || ii->iid != p2_info.next_unused_iid) {
@@ -402,6 +428,8 @@ leader_periodic_p2_check(int fd, short event, void *arg) {
         //Send prepare to acceptors
         sendbuf_add_prepare_req(to_acceptors, ii->iid, ii->my_ballot);  
         LOG(VRB, ("Instance %lu restarts from phase 1\n", i));
+        COUNT_EVENT(p2_timeout);
+
     }
     
     //Flush last message if any
@@ -476,6 +504,15 @@ leader_deliver(char * value, size_t size, iid_t iid, ballot_t ballot, int propos
 static int
 leader_init() {
     LOG(VRB, ("Proposer %d promoted to leader\n", this_proposer_id));
+    
+#ifdef LEADER_EVENTS_UPDATE_INTERVAL
+    clear_event_counters();
+    evtimer_set(&print_events_event, leader_print_event_counters, NULL);
+    evutil_timerclear(&print_events_interval);
+    print_events_interval.tv_sec = (LEADER_EVENTS_UPDATE_INTERVAL / 1000000);
+    print_events_interval.tv_usec = (LEADER_EVENTS_UPDATE_INTERVAL % 1000000);
+    leader_print_event_counters(0, 0, NULL);
+#endif
 
     //Initialize values handler
     if(vh_init()!= 0) {

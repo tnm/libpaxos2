@@ -18,13 +18,13 @@
     TODO comment
     Unit is microseconds - i.e. 1500000 = 1.5 secs
 */
-#define P1_TIMEOUT_INTERVAL 2000000
+#define P1_TIMEOUT_INTERVAL 5000000
 
 /* 
     TODO comment
     Unit is microseconds - i.e. 1500000 = 1.5 secs
 */
-#define P2_TIMEOUT_INTERVAL 2000000
+#define P2_TIMEOUT_INTERVAL 8000000
 
 /* 
     TODO comment
@@ -143,13 +143,21 @@
 
 
 /*** DEBUGGING SETTINGS ***/
+
+/*
+   TODO Comment!
+   10000000 = print every 10 sec
+   Undefine to toggle event counters
+*/
+#define LEADER_EVENTS_UPDATE_INTERVAL 10000000
+
 /*
   Verbosity of the library
   0 -> off (prints only errors)
   1 -> verbose
   3 -> debug
 */
-#define VERBOSITY_LEVEL 4
+#define VERBOSITY_LEVEL 0
 
 /*
   If PAXOS_DEBUG_MALLOC is defined, it turns on

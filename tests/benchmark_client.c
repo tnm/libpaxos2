@@ -11,7 +11,7 @@
 
 int start_time;
 int end_time;
-unsigned int concurrent_values = 5;
+unsigned int concurrent_values = 15;
 struct timeval values_timeout;
 int min_val_size = 12;
 int max_val_size = PAXOS_MAX_VALUE_SIZE;
