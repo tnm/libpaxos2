@@ -35,13 +35,13 @@ typedef struct proposer_instance_info {
     iid_t           iid;
     i_status        status;
     ballot_t        my_ballot;
-    size_t          value_size;
-    char*           value;
-    ballot_t        value_ballot;
-    
     unsigned int    promises_bitvector;
     unsigned int    promises_count;
-    vh_value_wrapper * assigned_value;//TODO clear
+
+    vh_value_wrapper * p1_value;//TODO clear
+    ballot_t        p1_value_ballot;
+    
+    vh_value_wrapper * p2_value;//TODO clear
     struct timeval  p2_timeout;//TODO clear
 } p_inst_info;
 

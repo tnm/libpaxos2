@@ -20,8 +20,10 @@ xterm -geometry 80x24+800+10 -e "cd $PROJ_DIR; ./example_acceptor 2; $KEEP_XTERM
 xterm -geometry 80x24+600+300 -e "cd $PROJ_DIR; ./example_learner; $KEEP_XTERM_OPEN" &
 sleep 3;
 
-xterm -geometry 80x24+10+300 -e "cd $PROJ_DIR; ./example_proposer 0; $KEEP_XTERM_OPEN" &
-sleep 2;
+xterm -geometry 100x24+10+300 -e "cd $PROJ_DIR; gdb ./example_proposer; $KEEP_XTERM_OPEN" &
+
+echo "Press enter to start the client"
+read
 
 xterm -geometry 80x8+10+600 -e "cd $PROJ_DIR; ./benchmark_client; $KEEP_XTERM_OPEN" &
 

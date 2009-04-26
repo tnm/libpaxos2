@@ -1,6 +1,6 @@
 BDB_DIR		= $(HOME)/bdb/build_unix
 LEV_DIR		= $(HOME)/libevent
-CFLAGS 		= -O2 -Wall -g -Wshadow -Wextra
+CFLAGS 		=  -Wall -g -Wshadow -Wextra
 CC			= gcc
 
 # Do not modify the following

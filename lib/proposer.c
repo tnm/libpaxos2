@@ -64,20 +64,15 @@ pro_clear_instance_info(p_inst_info * ii) {
     ii->iid = 0;
     ii->status = empty;
     ii->my_ballot = 0;
-    ii->value_size = 0;
-    if(ii->value != NULL) {
-        PAX_FREE(ii->value);
+    ii->p1_value_ballot = 0;
+    if(ii->p1_value != NULL) {
+        PAX_FREE(ii->p1_value);
     }
-    ii->value_ballot = 0;
-    
-    if(ii->assigned_value != NULL) {
-        if(ii->assigned_value->value != ii->value) {
-            PAX_FREE(ii->assigned_value->value);
-        }
-        PAX_FREE(ii->assigned_value);
+    ii->p1_value = NULL;
+    if(ii->p2_value != NULL) {
+        PAX_FREE(ii->p2_value);
     }
-
-    ii->value = NULL;
+    ii->p2_value = NULL;
 }
 
 static void
@@ -103,40 +98,31 @@ pro_save_prepare_ack(p_inst_info * ii, prepare_ack * pa, short int acceptor_id) 
     //Promise contains a value
     
     //Our value has same or greater ballot
-    if(ii->value_ballot >= pa->value_ballot) {
+    if(ii->p1_value_ballot >= pa->value_ballot) {
         //Keep the current value
         LOG(DBG, (" Included value is ignored (cause:value_ballot)\n"));
         return;
     }
     
     //Ballot is greater but the value is actually the same
-    if ((ii->value_size == pa->value_size) && 
-        (memcmp(ii->value, pa->value, ii->value_size) == 0)) {
+    if ((ii->p1_value != NULL) &&
+        (ii->p1_value->value_size == pa->value_size) && 
+        (memcmp(ii->p1_value->value, pa->value, pa->value_size) == 0)) {
         //Just update the value ballot
         LOG(DBG, (" Included value is the same with higher value_ballot\n"));
-        ii->value_ballot = pa->value_ballot;
+        ii->p1_value_ballot = pa->value_ballot;
         return;
     }
     
     //Value should replace the one we have (if any)
-
-    //Previous value found, it's not from
-    // the pending list, free it
-    if(ii->value_size != 0 &&
-        (ii->assigned_value == NULL ||
-        ii->assigned_value->value != ii->value)) {
-        PAX_FREE(ii->value);
-        LOG(DBG, (" Deleted old value (not from pending list)\n"));
+    //Free the old one
+    if (ii->p1_value != NULL) {
+        PAX_FREE(ii->p1_value);
     }
     
-    //In case value is from pending list, no need to free
-    // ldr_exec_reserved_p2 will do what necessary later
-
     //Save the received value 
-    ii->value = PAX_MALLOC(pa->value_size);
-    memcpy(ii->value, pa->value, pa->value_size);
-    ii->value_size = pa->value_size;
-    ii->value_ballot = pa->value_ballot;
+    ii->p1_value = vh_wrap_value(pa->value, pa->value_size);
+    ii->p1_value_ballot = pa->value_ballot;
     LOG(DBG, (" Value in promise saved\n"));
 }
 

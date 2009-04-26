@@ -16,6 +16,24 @@ static vh_value_wrapper * vh_list_tail = NULL;
 static struct event leader_msg_event;
 static udp_receiver * for_leader;
 
+vh_value_wrapper * 
+vh_wrap_value(char * value, size_t size) {
+    vh_value_wrapper * vw = PAX_MALLOC(sizeof(vh_value_wrapper) + size);
+    vw->value_size = size;
+    vw->next = NULL;
+    //Copy value in
+    memcpy(vw->value, value, size);
+    return vw;
+}
+
+//Return 0 for equals, like memcmp()
+int vh_value_compare(vh_value_wrapper * vw1, vh_value_wrapper * vw2) {
+    if(vw1->value_size != vw2->value_size) {
+        return -1;
+    }
+    return memcmp(vw1->value, vw2->value, vw1->value_size);
+}
+
 static void 
 vh_handle_newmsg(int sock, short event, void *arg) {
     //Make the compiler happy!
@@ -80,13 +98,7 @@ int vh_pending_list_size() {
 
 void vh_enqueue_value(char * value, size_t value_size) {
     //Create wrapper
-    vh_value_wrapper * new_vw = PAX_MALLOC(sizeof(vh_value_wrapper));
-    //Copy value in
-    new_vw->value = PAX_MALLOC(value_size);
-    memcpy(new_vw->value, value, value_size);
-    new_vw->value_size = value_size;
-    
-    new_vw->next = NULL;
+    vh_value_wrapper * new_vw = vh_wrap_value(value, value_size);
     
     /* List is empty*/
 	if (vh_list_head == NULL && vh_list_tail == NULL) {

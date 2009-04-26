@@ -133,7 +133,7 @@ leader_open_instances_p1() {
     
 }
 
-static void leader_set_p1_timeout() {
+static void leader_set_next_p1_check() {
     int ret;
     ret = event_add(&p1_check_event, &p1_check_interval);
     assert(ret == 0);
@@ -157,81 +157,33 @@ leader_periodic_p1_check(int fd, short event, void *arg)
     leader_open_instances_p1();
     
     //Set next check timeout for calling this function
-    leader_set_p1_timeout();
+    leader_set_next_p1_check();
     
 }
 
 /*-------------------------------------------------------------------------*/
 // Phase 2 routines
 /*-------------------------------------------------------------------------*/
-static void leader_set_p2_timeout() {
+static void leader_set_next_p2_check() {
     int ret;
     ret = event_add(&p2_check_event, &p2_check_interval);
     assert(ret == 0);
 }
 
 static void
-ldr_exec_reserved_p2(p_inst_info * ii) {
-    //Phase 1 completed with a value
-    //Send an accept with that value
-    // this is a strict requirement!
-    
-    vh_value_wrapper * vw = ii->assigned_value;
+leader_set_p2_expiration(p_inst_info * ii) {
+    struct timeval current_time;
+    gettimeofday(&current_time, NULL);
 
-    //No value assigned by us to this instance
-    if(vw == NULL) {
-        //Send the accept with the reserved value
-        sendbuf_add_accept_req(to_acceptors, ii);
-        LOG(VRB, ("Sending accept reserved instance %lu\n", ii->iid));
-        return;
-    }
-    
-    //Found a value and we assigned one
-    
-    int same_value = ((vw->value_size == ii->value_size) &&
-        (memcmp(vw->value, ii->value, vw->value_size) == 0));
-
-    //The P1 value is not ours, 
-    // send back ours to list and do P2 with the one received
-    if(!same_value) {
-        vh_push_back_value(vw);
-        ii->assigned_value = NULL;
-        LOG(VRB, ("Pushing back assigned value for reserved instance %lu\n", ii->iid));
-    }
-    
-    //Send the accept with the reserved value
-    sendbuf_add_accept_req(to_acceptors, ii);
-
-}
-
-static void
-ldr_exec_fresh_p2(p_inst_info * ii) {
-    //Phase 1 completed without a value
-    //We can send ours (assigned value)
-
-    vh_value_wrapper * vw = ii->assigned_value;
-    assert(vw != NULL);
-    
-    ii->value = vw->value;
-    ii->value_size = vw->value_size;
-    
-    //Send the accept with our value
-    sendbuf_add_accept_req(to_acceptors, ii);
-    LOG(VRB, ("Sending accept for clear instance %lu\n", ii->iid));
-
-}
-
-static void
-set_p2_expiration_timestamp(p_inst_info * ii, struct timeval * current_time) {
     struct timeval * deadline = &ii->p2_timeout;
     const unsigned int a_second = 1000000; 
 
     //Set seconds
-    deadline->tv_sec = current_time->tv_usec + (P2_TIMEOUT_INTERVAL / a_second);
+    deadline->tv_sec = current_time.tv_sec + (P2_TIMEOUT_INTERVAL / a_second);
     
     //Sum microsecs
     unsigned int usec_sum;
-    usec_sum = current_time->tv_usec + (P2_TIMEOUT_INTERVAL % a_second);
+    usec_sum = current_time.tv_usec + (P2_TIMEOUT_INTERVAL % a_second);
     
     //If sum of mircosecs exceeds 10d6, add another second
     if(usec_sum > a_second) {
@@ -243,27 +195,51 @@ set_p2_expiration_timestamp(p_inst_info * ii, struct timeval * current_time) {
 }
 
 static void
-leader_execute_p2(p_inst_info * ii, struct timeval * current_time) {
-    if(ii->value != NULL) {
-        //A value was received during phase 1
-        //We MUST execute p2 with that value
-        //But there may be an assigned value too
-        ldr_exec_reserved_p2(ii);
-    } else if (ii->assigned_value != NULL) {
-        //Phase 1 completed with no value, 
-        // but a client value was already assigned
-        ldr_exec_fresh_p2(ii);
-    } else {
-        //Phase 1 completed with no value, 
-        // assign a value from pending list
-        ii->assigned_value = vh_get_next_pending();
-        assert(ii->assigned_value != NULL);
-        //And do normal phase 2
-        ldr_exec_fresh_p2(ii);
-    }
+leader_execute_p2(p_inst_info * ii) {
     
-    set_p2_expiration_timestamp(ii, current_time);
+    if(ii->p1_value == NULL && ii->p2_value == NULL) {
+        //Happens when p1 completes without value        
+        //Assign a p2_value and execute
+        ii->p2_value = vh_get_next_pending();
+        assert(ii->p2_value != NULL);
+        
+    } else if (ii->p1_value != NULL) {
+        //Only p1 value is present, MUST execute p2 with it
+        //Save it as p2 value and execute
+        ii->p2_value = ii->p1_value;
+        ii->p1_value = NULL;
+        ii->p1_value_ballot = 0;
+        
+    } else if (ii->p2_value != NULL) {
+        // Only p2 valye is present
+        //Do phase 2 with it
+        
+    } else {
+        // There are both p1 and p2 value
+        //Compare them
+        if(vh_value_compare(ii->p1_value, ii->p2_value) == 0) {
+            // Same value, just delete p1_value
+            PAX_FREE(ii->p1_value);
+            ii->p1_value = NULL;
+            ii->p1_value_ballot = 0;
+        } else {
+            // Different values
+            // p2_value is pushed back to pending list
+            vh_push_back_value(ii->p2_value);
+            // Must execute p2 with p1 value
+            ii->p2_value = ii->p1_value;
+            ii->p1_value = NULL;
+            ii->p1_value_ballot = 0;            
+        }
+    }
+    //Change instance status
     ii->status = p2_pending;
+
+    //Send the accept request
+    sendbuf_add_accept_req(to_acceptors, ii, ii->p2_value->value, ii->p2_value->value_size);
+    
+    //Set the deadline for this instance
+    leader_set_p2_expiration(ii);
 }
 
 // Scan trough p1_ready that have a value
@@ -274,11 +250,7 @@ leader_open_instances_p2_expired() {
     
     //Create a batch of accept requests
     sendbuf_clear(to_acceptors, accept_reqs, this_proposer_id);
-    
-    //Save the time at which phase2 started
-    struct timeval time_now;
-    gettimeofday(&time_now, NULL);
-    
+        
     //Start new phase 2 for all instances found in status p1_ready
     // if they are in the range below, phase2 timed-out and 
     // we went successfully trough phase1 again
@@ -289,13 +261,12 @@ leader_open_instances_p2_expired() {
     
         ii = GET_PRO_INSTANCE(iid);
         assert(ii->iid == iid);
-        
-        if(ii->status == p1_ready) {
-            assert(ii->value != NULL || ii->assigned_value != NULL);
-            //Executes phase2, sending an accept request
-            //Using the found value or getting the next from list
-            leader_execute_p2(ii, &time_now);
 
+        //This instance is in status p1_ready but it's in the range
+        // of previously opened phase2, it's now time to retry
+        if(ii->status == p1_ready) {
+            assert(ii->p2_value != NULL || ii->p2_value != NULL);
+            leader_execute_p2(ii);
             //Count opened
             count += 1;
         }
@@ -329,17 +300,13 @@ leader_open_instances_p2_new() {
     //Create a batch of accept requests
     sendbuf_clear(to_acceptors, accept_reqs, this_proposer_id);
     
-    //Save the time at which phase2 started
-    struct timeval time_now;
-    gettimeofday(&time_now, NULL);
-    
     //Start new phase 2 while there is some value from 
     // client to send and we can open more concurrent instances
     while((p2_info.next_unused_iid - current_iid) 
                         <= PROPOSER_P2_CONCURRENCY) {
 
         ii = GET_PRO_INSTANCE(p2_info.next_unused_iid);
-        assert(ii->assigned_value == NULL);
+        assert(ii->p2_value == NULL);
         
         //Next unused is not ready, stop
         if(ii->status != p1_ready || ii->iid != p2_info.next_unused_iid) {
@@ -348,8 +315,7 @@ leader_open_instances_p2_new() {
         }
 
         //No value to send for next unused, stop
-        if(ii->value == NULL &&
-            ii->assigned_value == NULL &&
+        if(ii->p1_value == NULL &&
             vh_pending_list_size() == 0) {
                 LOG(DBG, ("No value to use for next instance\n"));
                 break;
@@ -357,7 +323,7 @@ leader_open_instances_p2_new() {
 
         //Executes phase2, sending an accept request
         //Using the found value or getting the next from list
-        leader_execute_p2(ii, &time_now);
+        leader_execute_p2(ii);
         
         //Count opened
         count += 1;
@@ -375,7 +341,7 @@ leader_open_instances_p2_new() {
 }
 
 static int
-ldr_is_expired(struct timeval * deadline, struct timeval * time_now) {
+leader_is_expired(struct timeval * deadline, struct timeval * time_now) {
     return (deadline->tv_sec < time_now->tv_sec ||
             (deadline->tv_sec == time_now->tv_sec &&
             deadline->tv_usec < time_now->tv_usec));
@@ -404,13 +370,6 @@ leader_periodic_p2_check(int fd, short event, void *arg) {
             continue;
         }
         
-        //Not expired yet, skip
-        if(!ldr_is_expired(&ii->p2_timeout, &now)) {
-            continue;
-        }
-        
-        //Timer is expired!
-        
         //Check if it was closed in the meanwhile 
         // (but not delivered yet)
         if(learner_is_closed(i)) {
@@ -421,6 +380,11 @@ leader_periodic_p2_check(int fd, short event, void *arg) {
             continue;
         }
         
+        //Not expired yet, skip
+        if(!leader_is_expired(&ii->p2_timeout, &now)) {
+            continue;
+        }
+        
         //Expired and not closed: must restart from phase 1
         ii->status = p1_pending;
         p1_info.pending_count += 1;
@@ -428,6 +392,7 @@ leader_periodic_p2_check(int fd, short event, void *arg) {
         //Send prepare to acceptors
         sendbuf_add_prepare_req(to_acceptors, ii->iid, ii->my_ballot);  
         LOG(VRB, ("Instance %lu restarts from phase 1\n", i));
+
         COUNT_EVENT(p2_timeout);
 
     }
@@ -439,7 +404,7 @@ leader_periodic_p2_check(int fd, short event, void *arg) {
     leader_open_instances_p2_new();
     
     //Set next invokation of this function
-    leader_set_p2_timeout();
+    leader_set_next_p2_check();
 
 }
 
@@ -466,26 +431,30 @@ leader_deliver(char * value, size_t size, iid_t iid, ballot_t ballot, int propos
     if(p2_info.next_unused_iid == iid) {
         p2_info.next_unused_iid += 1;
     }
-    int same_val = (ii->value != NULL) && 
-        (ii->value_size == size) &&
-        (memcmp(value, ii->value, size) == 0);
+    int my_val = (ii->p2_value != NULL) &&
+        (ii->p2_value->value_size == size) &&
+        (memcmp(value, ii->p2_value->value, size) == 0);
+    // int same_val = (ii->value != NULL) && 
+    //     (ii->value_size == size) &&
+    //     (memcmp(value, ii->value, size) == 0);
     
-    vh_value_wrapper * vw = ii->assigned_value;
-    int assigned_val = same_val &&
-        (ii->assigned_value != NULL) && 
-        (vw->value_size == size) &&
-        ((vw->value == ii->value) || 
-            memcmp(vw->value, ii->value, size) == 0);
+    // vh_value_wrapper * vw = ii->assigned_value;
+    // int assigned_val = same_val &&
+    //     (ii->assigned_value != NULL) && 
+    //     (vw->value_size == size) &&
+    //     ((vw->value == ii->value) || 
+    //         memcmp(vw->value, ii->value, size) == 0);
 
-    if(assigned_val) {
-        vh_notify_client(0, vw);
-    } else if(vw != NULL) {
-        vh_push_back_value(vw);
-        //If ref is the same
-        if(ii->value == vw->value) {
-            //Delete pointer otherwise freed in clear_ii below
-            ii->value = NULL;
-        }
+    if(my_val) {
+    //Our value accepted, notify client that submitted it
+        vh_notify_client(0, ii->p2_value);
+    } else if(ii->p2_value != NULL) {
+    //Different value accepted, push back our value
+        vh_push_back_value(ii->p2_value);
+        ii->p2_value = NULL;
+    } else {
+        //We assigned no value to this instance, 
+        //it comes from somebody else??
     }
 
     //Clear current instance
@@ -544,7 +513,7 @@ leader_init() {
     evutil_timerclear(&p2_check_interval);
     p2_check_interval.tv_sec = ((P2_TIMEOUT_INTERVAL/3) / 1000000);
     p2_check_interval.tv_usec = ((P2_TIMEOUT_INTERVAL/3) % 1000000);
-    leader_set_p2_timeout();
+    leader_set_next_p2_check();
     
     LOG(VRB, ("Leader is ready\n"));
     return 0;        

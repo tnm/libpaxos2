@@ -30,7 +30,7 @@ void sendbuf_add_repeat_req(udp_send_buffer * sb, iid_t iid);
 void sendbuf_add_accept_ack(udp_send_buffer * sb, acceptor_record * rec);
 void sendbuf_add_prepare_req(udp_send_buffer * sb, iid_t iid, ballot_t ballot);
 void sendbuf_add_prepare_ack(udp_send_buffer * sb, acceptor_record * rec);
-void sendbuf_add_accept_req(udp_send_buffer * sb, p_inst_info * ii);
+void sendbuf_add_accept_req(udp_send_buffer * sb, p_inst_info * ii, char * value, size_t val_size);
 void sendbuf_add_submit_val(udp_send_buffer * sb, char * value, size_t val_size);
 
 

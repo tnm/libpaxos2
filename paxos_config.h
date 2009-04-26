@@ -24,7 +24,7 @@
     TODO comment
     Unit is microseconds - i.e. 1500000 = 1.5 secs
 */
-#define P2_TIMEOUT_INTERVAL 8000000
+#define P2_TIMEOUT_INTERVAL 3000000
 
 /* 
     TODO comment
@@ -83,12 +83,12 @@
 
 /*
     Setting for how 'strict' the durability of acceptors should be.
-    DB_LOG_INMEMORY: Transactional Data Store (write, in-memory logging)
+    DB_LOG_IN_MEMORY: Transactional Data Store (write, in-memory logging)
     DB_TXN_NOSYNC: Transactional Data Store (write, no-sync on commit)
     DB_TXN_WRITE_NOSYNC: Transactional Data Store (write, write-no-sync on commit)
     0: Transactional Data Store (write, sync on commit)
 */
-#define BDB_TX_MODE 0
+#define BDB_TX_MODE DB_LOG_IN_MEMORY
 
 /*
     Path for creating acceptors' BDB file
