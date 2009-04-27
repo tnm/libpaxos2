@@ -11,12 +11,13 @@
 
 int start_time;
 int end_time;
-unsigned int concurrent_values = 15;
+unsigned int concurrent_values = 30;
 struct timeval values_timeout;
-int min_val_size = 12;
-int max_val_size = PAXOS_MAX_VALUE_SIZE;
+int min_val_size = 30;
+// int max_val_size = PAXOS_MAX_VALUE_SIZE;
+int max_val_size = 300;
 int duration = 120;
-int print_step = 1;
+int print_step = 10;
 
 int delivered_count = 0;
 int submitted_count = 0;
@@ -222,6 +223,12 @@ int main (int argc, char const *argv[])
     while(time(NULL) < end_time) {
         sleep(10);
     }    
+    
+    printf("Total delivered:%u\n", delivered_count);
+    printf("\tRate:%f\n", ((float)delivered_count/duration));
+    printf("Total submitted:%u\n", submitted_count);
+    printf("\tRate:%f\n", ((float)submitted_count/duration));
+    printf("Timed-out values:%u\n", retried_count);
     
     return 0;
 }

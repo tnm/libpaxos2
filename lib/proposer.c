@@ -48,6 +48,7 @@ struct phase1_info p1_info;
 
 struct phase2_info {
     iid_t next_unused_iid; //TODO init
+    unsigned int open_count;
 };
 struct phase2_info p2_info;
 

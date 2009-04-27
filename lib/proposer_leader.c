@@ -14,6 +14,7 @@ static void empty_fun() {};
 struct leader_event_counters {
     long unsigned int p1_timeout;
     long unsigned int p2_timeout;
+    long unsigned int p2_waits_p1
 };
 struct leader_event_counters lead_counters;
 struct event print_events_event;
@@ -22,6 +23,7 @@ struct timeval print_events_interval;
 static void clear_event_counters() {
     lead_counters.p1_timeout = 0;    
     lead_counters.p2_timeout = 0;
+    lead_counters.p2_waits_p1 = 0;
 }
 
 static void 
@@ -31,11 +33,15 @@ leader_print_event_counters(int fd, short event, void *arg) {
     UNUSED_ARG(arg);
     printf("-----------------------------------------------\n");
     printf("current_iid:%lu\n", current_iid);
+    printf("Phase 1_____________________:\n");
     printf("p1_timeout:%lu\n", lead_counters.p1_timeout);
-    printf("p2_timeout:%lu\n", lead_counters.p2_timeout);
     printf("p1_info.pending_count:%u\n", p1_info.pending_count);
     printf("p1_info.ready_count:%u\n", p1_info.ready_count);
     printf("p1_info.highest_open:%lu\n", p1_info.highest_open);
+    printf("Phase 2_____________________:\n");    
+    printf("p2_timeout:%lu\n", lead_counters.p2_timeout);
+    printf("p2_waits_p1:%lu\n", lead_counters.p2_waits_p1);
+    printf("p2_info.open_count:%u\n", p2_info.open_count);
     printf("p2_info.next_unused_iid:%lu\n", p2_info.next_unused_iid);
     printf("-----------------------------------------------\n");
     
@@ -290,20 +296,20 @@ leader_open_instances_p2_new() {
 
     //For better batching, opening new instances at the end
     // is preferred when more than 1 can be opened together
-    unsigned int max_active_p2 = p2_info.next_unused_iid - current_iid;
-    if ((max_active_p2) > (PROPOSER_P2_CONCURRENCY/2)) {
-        LOG(DBG, ("Skipping Phase2 open, %u may be still active\n", 
-            max_active_p2));
+    unsigned int treshold = (PROPOSER_P2_CONCURRENCY/3)*2;
+    if (p2_info.open_count > treshold) {
+        LOG(DBG, ("Skipping Phase2 open, %u are still active (tresh:%u)\n", p2_info.open_count, treshold));
         return;
     }
+    LOG(DBG, ("Could open %u p2 instances\n", 
+        (PROPOSER_P2_CONCURRENCY - p2_info.open_count)));
 
     //Create a batch of accept requests
     sendbuf_clear(to_acceptors, accept_reqs, this_proposer_id);
     
     //Start new phase 2 while there is some value from 
     // client to send and we can open more concurrent instances
-    while((p2_info.next_unused_iid - current_iid) 
-                        <= PROPOSER_P2_CONCURRENCY) {
+    while((count + p2_info.open_count) <= PROPOSER_P2_CONCURRENCY) {
 
         ii = GET_PRO_INSTANCE(p2_info.next_unused_iid);
         assert(ii->p2_value == NULL);
@@ -311,13 +317,14 @@ leader_open_instances_p2_new() {
         //Next unused is not ready, stop
         if(ii->status != p1_ready || ii->iid != p2_info.next_unused_iid) {
             LOG(DBG, ("Next instance to use for P2 (iid:%lu) is not ready yet\n", p2_info.next_unused_iid));
+            COUNT_EVENT(p2_waits_p1);
             break;
         }
 
         //No value to send for next unused, stop
         if(ii->p1_value == NULL &&
             vh_pending_list_size() == 0) {
-                LOG(DBG, ("No value to use for next instance\n"));
+                LOG(0, ("No value to use for next instance\n"));
                 break;
         }
 
@@ -333,11 +340,13 @@ leader_open_instances_p2_new() {
     
     //Count p1_ready that were consumed
     p1_info.ready_count -= count;
-    
+    //Count newly opened
+    p2_info.open_count += count;
     //Flush last accept_req batch
     sendbuf_flush(to_acceptors);
-    
-    LOG(DBG, ("Opened %u new instances\n", count));
+    if(count > 0) {
+        LOG(DBG, ("Opened %u new instances\n", count));
+    }
 }
 
 static int
@@ -374,6 +383,7 @@ leader_periodic_p2_check(int fd, short event, void *arg) {
         // (but not delivered yet)
         if(learner_is_closed(i)) {
             ii->status = p2_completed;
+            p2_info.open_count -= 1;
             //The rest (i.e. answering client)
             // is done when the value is actually delivered
             LOG(VRB, ("Instance %lu closed, waiting for deliver\n", i));
@@ -431,19 +441,17 @@ leader_deliver(char * value, size_t size, iid_t iid, ballot_t ballot, int propos
     if(p2_info.next_unused_iid == iid) {
         p2_info.next_unused_iid += 1;
     }
+    
+    int opened_by_me = (ii->status == p1_pending && ii->p2_value != NULL) ||
+        (ii->status == p1_ready && ii->p2_value != NULL) ||
+        (ii->status == p2_pending);
+    if(opened_by_me) {
+        p2_info.open_count -= 1;
+    }
+
     int my_val = (ii->p2_value != NULL) &&
         (ii->p2_value->value_size == size) &&
         (memcmp(value, ii->p2_value->value, size) == 0);
-    // int same_val = (ii->value != NULL) && 
-    //     (ii->value_size == size) &&
-    //     (memcmp(value, ii->value, size) == 0);
-    
-    // vh_value_wrapper * vw = ii->assigned_value;
-    // int assigned_val = same_val &&
-    //     (ii->assigned_value != NULL) && 
-    //     (vw->value_size == size) &&
-    //     ((vw->value == ii->value) || 
-    //         memcmp(vw->value, ii->value, size) == 0);
 
     if(my_val) {
     //Our value accepted, notify client that submitted it
@@ -506,6 +514,7 @@ leader_init() {
     
     //TODO check again later...
     p2_info.next_unused_iid = current_iid;
+    p2_info.open_count = 0;
     
     //Initialize timer and corresponding event for
     // checking timeouts of instances, phase 2

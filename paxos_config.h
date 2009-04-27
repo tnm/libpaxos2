@@ -6,7 +6,7 @@
 /* 
     TODO comment
 */
-#define PROPOSER_PREEXEC_WIN_SIZE 40
+#define PROPOSER_PREEXEC_WIN_SIZE 80
 
 /* 
     TODO comment
@@ -18,7 +18,7 @@
     TODO comment
     Unit is microseconds - i.e. 1500000 = 1.5 secs
 */
-#define P1_TIMEOUT_INTERVAL 5000000
+#define P1_TIMEOUT_INTERVAL 1000000
 
 /* 
     TODO comment
@@ -88,7 +88,7 @@
     DB_TXN_WRITE_NOSYNC: Transactional Data Store (write, write-no-sync on commit)
     0: Transactional Data Store (write, sync on commit)
 */
-#define BDB_TX_MODE DB_LOG_IN_MEMORY
+#define BDB_TX_MODE 0
 
 /*
     Path for creating acceptors' BDB file
@@ -119,9 +119,9 @@
   Multicast <address, port> for the respective groups
 */
 #define PAXOS_LEARNERS_NET  "239.0.0.1", 6001
-#define PAXOS_ACCEPTORS_NET "239.0.0.1", 6002
-#define PAXOS_PROPOSERS_NET "239.0.0.1", 6003
-#define PAXOS_SUBMIT_NET    "239.0.0.1", 6004
+#define PAXOS_ACCEPTORS_NET "239.1.0.1", 6002
+#define PAXOS_PROPOSERS_NET "239.2.0.1", 6003
+#define PAXOS_SUBMIT_NET    "239.3.0.1", 6004
 
 
 /*** STRUCTURES SETTINGS ***/
