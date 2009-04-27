@@ -33,6 +33,27 @@ static udp_receiver * for_proposer;
 //Event: Message received
 static struct event proposer_msg_event;
 
+typedef enum instance_status_e {
+    empty, 
+    p1_pending,
+    p1_ready,
+    p2_pending, 
+    p2_completed
+} i_status;
+
+//Structure used by proposer to store all info relative to a given instance
+typedef struct proposer_instance_info {
+    iid_t           iid;
+    i_status        status;
+    ballot_t        my_ballot;
+    unsigned int    promises_bitvector;
+    unsigned int    promises_count;
+    vh_value_wrapper * p1_value;
+    ballot_t        p1_value_ballot;
+    vh_value_wrapper * p2_value;
+    struct timeval  p2_timeout;
+} p_inst_info;
+
 p_inst_info proposer_state[PROPOSER_ARRAY_SIZE];
 #define GET_PRO_INSTANCE(I) &proposer_state[((I) & (PROPOSER_ARRAY_SIZE-1))]
 
@@ -47,7 +68,7 @@ struct phase1_info {
 struct phase1_info p1_info;
 
 struct phase2_info {
-    iid_t next_unused_iid; //TODO init
+    iid_t next_unused_iid;
     unsigned int open_count;
 };
 struct phase2_info p2_info;
@@ -138,7 +159,7 @@ pro_deliver_callback(char * value, size_t size, iid_t iid, ballot_t ballot, int 
     
     current_iid = iid + 1;
 
-    //TODO clear inst_info
+    //clear inst_info not required, done by leader
 }
 /*-------------------------------------------------------------------------*/
 // Event handlers
@@ -174,7 +195,7 @@ handle_prepare_ack(prepare_ack * pa, short int acceptor_id) {
     ii->status = p1_ready;
     p1_info.pending_count -= 1;
     p1_info.ready_count += 1;
-    //TODO anything else??
+
     LOG(DBG, ("Quorum for iid:%ld reached\n", pa->iid));
     
     return 1;
@@ -346,7 +367,7 @@ static int init_proposer() {
 int proposer_init(int proposer_id) {
     
     //Check id validity of proposer_id
-    if(proposer_id < 0 || proposer_id >= N_OF_PROPOSERS) {
+    if(proposer_id < 0 || proposer_id >= MAX_N_OF_PROPOSERS) {
         printf("Invalid proposer id:%d\n", proposer_id);
         return -1;
     }    

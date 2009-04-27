@@ -130,7 +130,7 @@ void sendbuf_add_prepare_ack(udp_send_buffer * sb, acceptor_record * rec) {
 
 }
 
-void sendbuf_add_accept_req(udp_send_buffer * sb, p_inst_info * ii, char * value, size_t val_size) {
+void sendbuf_add_accept_req(udp_send_buffer * sb, iid_t iid, ballot_t ballot, char * value, size_t val_size) {
     paxos_msg * m = (paxos_msg *) &sb->buffer;
     assert(m->type == accept_reqs);
 
@@ -146,8 +146,8 @@ void sendbuf_add_accept_req(udp_send_buffer * sb, p_inst_info * ii, char * value
     }
 
     accept_req * ar = (accept_req *)&m->data[m->data_size];
-    ar->iid = ii->iid;
-    ar->ballot = ii->my_ballot;
+    ar->iid = iid;
+    ar->ballot = ballot;
     ar->value_size = val_size;
     memcpy(ar->value, value, val_size);
     

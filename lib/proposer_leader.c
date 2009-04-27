@@ -14,7 +14,7 @@ static void empty_fun() {};
 struct leader_event_counters {
     long unsigned int p1_timeout;
     long unsigned int p2_timeout;
-    long unsigned int p2_waits_p1
+    long unsigned int p2_waits_p1;
 };
 struct leader_event_counters lead_counters;
 struct event print_events_event;
@@ -45,9 +45,12 @@ leader_print_event_counters(int fd, short event, void *arg) {
     printf("p2_info.next_unused_iid:%lu\n", p2_info.next_unused_iid);
     printf("-----------------------------------------------\n");
     
-    int ret;
-    ret = event_add(&print_events_event, &print_events_interval);
-    assert(ret == 0);
+    //Keep printing if the current leader is still this proposer
+    if(LEADER_IS_ME) {
+        int ret;
+        ret = event_add(&print_events_event, &print_events_interval);
+        assert(ret == 0);
+    }
 
 }
 #endif
@@ -242,7 +245,7 @@ leader_execute_p2(p_inst_info * ii) {
     ii->status = p2_pending;
 
     //Send the accept request
-    sendbuf_add_accept_req(to_acceptors, ii, ii->p2_value->value, ii->p2_value->value_size);
+    sendbuf_add_accept_req(to_acceptors, ii->iid, ii->my_ballot, ii->p2_value->value, ii->p2_value->value_size);
     
     //Set the deadline for this instance
     leader_set_p2_expiration(ii);
@@ -497,9 +500,10 @@ leader_init() {
         return -1;
     }
 
-    //TODO check again later...
+    // Reset phase 1 counters
     p1_info.pending_count = 0;
     p1_info.ready_count = 0;
+    // Set so that next p1 to open is current_iid
     p1_info.highest_open = current_iid - 1;
     
     //Initialize timer and corresponding event for
@@ -512,7 +516,7 @@ leader_init() {
     //Check pending, open new, set next timeout
     leader_periodic_p1_check(0, 0, NULL);
     
-    //TODO check again later...
+    //Reset phase 2 counters
     p2_info.next_unused_iid = current_iid;
     p2_info.open_count = 0;
     
@@ -534,10 +538,24 @@ leader_shutdown() {
 
     evtimer_del(&p1_check_event);
     evtimer_del(&p2_check_event);
+
+    //Iterate over currently open instances 
+    p_inst_info * ii;
+    unsigned int i;
+    for(i = current_iid; i <= p1_info.highest_open; i++) {
+        ii = GET_PRO_INSTANCE(i);
         
-    //TODO for all opened answer clients
-    //TODO for all pending answer clients
-    //TODO Clear inst_info array
-    
+        if(ii->status != p2_completed && ii->p2_value != NULL) {
+            // A value was assigned to this instance, but it did 
+            // not complete. Send back to the pending list for now
+            vh_push_back_value(ii->p2_value);
+            ii->p2_value = NULL;
+        }
+        //Clear all instances
+        pro_clear_instance_info(ii);
+    }
+        
+    //This will clear all values in the pending list
+    // and notify the respective clients
     vh_shutdown();
 }

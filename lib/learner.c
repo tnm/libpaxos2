@@ -421,8 +421,8 @@ static int
 init_lea_timers() {
     evtimer_set(&hole_check_event, lea_hole_check, NULL);
 	evutil_timerclear(&hole_check_interval);
-	hole_check_interval.tv_sec = LEARNER_HOLECHECK_INTERVAL_S;
-    hole_check_interval.tv_usec = LEARNER_HOLECHECK_INTERVAL_US;
+	hole_check_interval.tv_sec = LEARNER_HOLECHECK_INTERVAL / 1000000;
+    hole_check_interval.tv_usec = LEARNER_HOLECHECK_INTERVAL % 1000000;
 	if(event_add(&hole_check_event, &hole_check_interval) != 0) {
 	   printf("Error while adding first periodic hole_check event\n");
        return -1;

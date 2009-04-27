@@ -3,27 +3,41 @@
 #include <sys/types.h>
 #include "paxos_config.h"
 
-
-
 /* 
-    TODO comment
+    The maximum size that can be submitted by a client.
     Max packet size minus largest header possible
     (should be accept_ack_batch+accept_ack, around 30 bytes)
 */
 #define PAXOS_MAX_VALUE_SIZE (MAX_UDP_MSG_SIZE - 40)
+
 /* 
-    TODO comment
+    Alias for instance identificator and ballot number.
 */
 typedef unsigned int ballot_t;
 typedef long unsigned int iid_t;
 
-// Type for function passed to the learner
-// Example void my_deliver_fun(char * value, size_t size, iid_t iid, ballot_t ballot, int proposer)
+/* 
+    When starting a learner you must pass a function to be invoked whenever
+    a value is delivered.
+    This defines the type of such function.
+    Example: 
+    void my_deliver_fun(char * value, size_t size, iid_t iid, ballot_t ballot, int proposer) {
+        ...
+    }
+*/
 typedef void (* deliver_function)(char*, size_t, iid_t, ballot_t, int);
 
-// Type for function passed to the learner, 
-// called by learner thread after it's normal initialization
-// Example int my_custom_init()
+
+/* 
+    When starting a learner you may pass a function to be invoked 
+    within libevent, after the normal learner initialization.
+    (so that new events/timeouts can be added)
+    This defines the type of such function.
+    Example: 
+    void int my_custom_init() {
+        ...
+    }
+*/
 typedef int (* custom_init_function)(void);
 
 /*
@@ -51,76 +65,45 @@ int learner_init(deliver_function f, custom_init_function cif);
 int acceptor_init(int acceptor_id);
 
 /*
-    Starts an acceptor that instead of starting clean
-    tries to recover from an existing db.
+    Starts an acceptor that instead of creating a clean DB,
+    tries to recover from an existing one.
     Return value is 0 if successful
 */
 int acceptor_init_recover(int acceptor_id);
 
-//TODO should delegate close to libevent thread
+/*
+    Shuts down the acceptor in the current process.
+    It may take a few seconds to complete since the DB needs to be closed.
+*/
+//FIXME should delegate close to libevent thread
 int acceptor_exit();
 
 /*
-    TODO comment
+    Starts a proposer with the given ID (which MUST be unique).
     Return value is 0 if successful
+    proposer_id -> Must be in the range [0...(MAX_N_OF_PROPOSERS-1)]
 */
 int proposer_init(int proposer_id);
 
 /*
-    TODO comment
+    This is returned to the when creating a new submit handle
 */
 typedef struct paxos_submit_handle_t {
     void * sendbuf;
-}paxos_submit_handle;
+} paxos_submit_handle;
 
+/*
+    Creates a new handle for this client to submit values.
+    Different threads in a process can have their personal handle
+    or share a common one (locking is up to you!)
+*/
 paxos_submit_handle * pax_submit_handle_init();
 
 /*
-    TODO comment
+    This call sends a value to the current leader and returns immediately.
+    There is no guarantee that the value even reached the leader.
 */
 int pax_submit_nonblock(paxos_submit_handle * h, char * value, size_t val_size);
 
-// /*
-//     (MTU) - 8 (multicast header) - 32 (biggest paxos header)
-// */
-// #define MAX_UDP_MSG_SIZE 9000
-// #define PAXOS_MAX_VALUE_SIZE 8960
 
-// //Starts a learner and does not return unless an error occours
-// int learner_init(deliver_function f);
-// 
-// //Starts a learner in a thread and returns
-// int learner_init_threaded(deliver_function f);
-// 
-// //Starts a proposer and returns
-// int proposer_init(int proposer_id, int is_leader);
-// 
-// //Starts a proposer which also delivers values from it's internal learner.
-// //IMPORTANT: 
-// // This function starts the libevent loop in a new thread. The function F is invoked by this thread.
-// // Therefore if the callback F accessess data shared with other threads (i.e. the one that calls proposer_submit()), F must be made thread-safe!!!
-// // At the moment it is thread-safe only if the other thread is blocked-in or trying to call proposer_submit.
-// // F must be as fast as possible since the proposer is blocked in the meanwhile.
-// // The contents of the value buffer passed as first argument to F should not be modified!
-// int proposer_init_and_deliver(int prop_id, int is_leader, deliver_function f);
-// 
-// //Submit a value paxos, returns when the value is delivered
-// void proposer_submit_value(char * value, size_t val_size);
-// 
-// //Starts an acceptor and does not return unless an error occours
-// int acceptor_start(int acceptor_id);
-// 
-// //// TO DO - Not Implemented! ///
-// 
-// int proposer_queue_size();
-// 
-// void proposer_print_event_counters();
-// 
-// 
-// int learner_get_next_value(char** valuep);
-// int learner_get_next_value_nonblock(char** valuep);
-// 
-// void learner_print_event_counters();
-// 
-// 
 #endif /* _LIBPAXOS_H_ */

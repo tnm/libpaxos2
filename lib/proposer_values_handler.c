@@ -87,7 +87,16 @@ vh_init() {
 
 void 
 vh_shutdown() {
+    //TODO Delete event
+    //TODO Close socket    
     
+    //All values in pending could not be delivered yet.
+    // Notify the respective clients
+    vh_value_wrapper * vw;
+    while ((vw = vh_get_next_pending()) != NULL) {
+        vh_notify_client(-1, vw);
+        PAX_FREE(vw);        
+    }
 }
 
 
@@ -154,6 +163,12 @@ vh_push_back_value(vh_value_wrapper * vw) {
 }
 
 void vh_notify_client(unsigned int result, vh_value_wrapper * vw) {
-    // TODO
-    // printf("NOTIFY CLIENT!\n");
+    // This is a stub for notifying a client that its value
+    // could not be delivered (notice that the value may actually
+    // be delivered afterward by some other proposer)
+    if(result != 0) {
+        LOG(DBG, ("Notify client -> Submit failed\n"));
+    } else {
+        LOG(DBG, ("Notify client -> Submit successful\n"));
+    }
 }
