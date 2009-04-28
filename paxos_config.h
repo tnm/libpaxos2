@@ -98,6 +98,15 @@
 */
 #define LEARNER_HOLECHECK_INTERVAL 2000000
 
+
+/*** FAILURE DETECTOR SETTINGS ***/
+/*
+    How frequently each proposer sends it's 'alive' message
+    to the failure oracle.
+    Unit is microseconds.
+*/
+#define FAILURE_DETECTOR_PING_INTERVAL 3000000
+
 /*** ACCEPTORS DB SETTINGS ***/
 /*
     Setting for how 'strict' the durability of acceptors should be.
@@ -144,11 +153,14 @@
   Multicast <address, port> for the respective groups
   The first three are used by the protocol. Only on the fourth one
   the client is allowed to send submitted values.
+  The fifth and sixth are reserved for leader election and failure detection
 */
 #define PAXOS_LEARNERS_NET  "239.0.0.1", 6001
 #define PAXOS_ACCEPTORS_NET "239.1.0.1", 6002
 #define PAXOS_PROPOSERS_NET "239.2.0.1", 6003
 #define PAXOS_SUBMIT_NET    "239.3.0.1", 6004
+#define PAXOS_ORACLE_NET    "239.4.0.1", 6005
+#define PAXOS_PINGS_NET     "239.5.0.1", 6006
 
 
 /*** STRUCTURES SETTINGS ***/

@@ -6,6 +6,9 @@
 #include <arpa/inet.h>
 #include <fcntl.h>
 
+#include "libpaxos_priv.h"
+#include "libpaxos_messages.h"
+
 typedef struct udp_send_buffer_t {
     int sock;
     struct sockaddr_in addr;
@@ -34,9 +37,14 @@ void sendbuf_add_accept_req(udp_send_buffer * sb, iid_t iid, ballot_t ballot, ch
 void sendbuf_add_submit_val(udp_send_buffer * sb, char * value, size_t val_size);
 
 
+udp_receiver * udp_receiver_blocking_new(char* address_string, int port);
 udp_receiver * udp_receiver_new(char* address_string, int port);
 int udp_read_next_message(udp_receiver * recv_info);
 int udp_receiver_destroy(udp_receiver * rec);
+
+void sendbuf_send_ping(udp_send_buffer * sb, short int proposer_id, long unsigned int sequence_number);
+void sendbuf_send_leader_announce(udp_send_buffer * sb, short int leader_id);
+
 
 void print_paxos_msg(paxos_msg * msg);
 

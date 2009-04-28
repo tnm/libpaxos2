@@ -6,12 +6,14 @@
 */
 
 typedef enum pax_msg_code_e {
-    prepare_reqs=1, //Phase 1a, P->A
-    prepare_acks=2, //Phase 1b, A->P
-    accept_reqs=4,  //Phase 2a, P->A
-    accept_acks=8,  //Phase 2b, A->L
-    repeat_reqs=16, //For progress, L -> A
-    submit=32       //Clients to leader
+    prepare_reqs=1,     //Phase 1a, P->A
+    prepare_acks=2,     //Phase 1b, A->P
+    accept_reqs=4,      //Phase 2a, P->A
+    accept_acks=8,      //Phase 2b, A->L
+    repeat_reqs=16,     //For progress, L -> A
+    submit=32,          //Clients to leader
+    leader_announce=64, //Oracle to proposers
+    alive_ping=65       //Proposers to oracle
 } paxos_msg_code;
 
 typedef struct paxos_msg_t {
@@ -104,6 +106,19 @@ typedef struct repeat_req_batch_t {
     iid_t requests[0];
 } repeat_req_batch;
 #define REPEAT_REQ_BATCH_SIZE(B) (sizeof(repeat_req_batch) + (sizeof(iid_t) * B->count))
+
+/* 
+    Failure detection/leader election messages
+*/
+typedef struct leader_announce_msg_t {
+    short int current_leader;
+} leader_announce_msg;
+
+typedef struct alive_ping_msg_t {
+    short int proposer_id;
+    long unsigned int sequence_number;
+} alive_ping_msg;
+
 
 
 #endif /* end of include guard: LIBPAXOS_MESSAGES_H_HP8GZLGD */

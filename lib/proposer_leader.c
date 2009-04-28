@@ -483,7 +483,7 @@ leader_deliver(char * value, size_t size, iid_t iid, ballot_t ballot, int propos
 
 static int
 leader_init() {
-    LOG(VRB, ("Proposer %d promoted to leader\n", this_proposer_id));
+    LOG(0, ("Proposer %d promoted to leader\n", this_proposer_id));
     
 #ifdef LEADER_EVENTS_UPDATE_INTERVAL
     clear_event_counters();
@@ -534,7 +534,7 @@ leader_init() {
 
 static void
 leader_shutdown() {
-    LOG(VRB, ("Proposer %d dropping leadership\n", this_proposer_id));
+    LOG(0, ("Proposer %d dropping leadership\n", this_proposer_id));
 
     evtimer_del(&p1_check_event);
     evtimer_del(&p2_check_event);

@@ -136,6 +136,16 @@ static int validate_paxos_msg(paxos_msg * m, size_t msg_size) {
         }
         break;
         
+        case alive_ping: {
+            expected_size += sizeof(alive_ping_msg);
+        }
+        break;
+
+        case leader_announce: {
+            expected_size += sizeof(leader_announce_msg);
+        }
+        break;
+        
         default: {
             printf("Unknow paxos message type:%d\n", m->type);
             return -1;
@@ -239,9 +249,8 @@ void print_paxos_msg(paxos_msg * msg) {
     printf("]\n");
 }
 
-
-//Creates a new non-blocking UDP multicast receiver for the given address/port
-udp_receiver * udp_receiver_new(char* address_string, int port) {
+//Creates a new blocking UDP multicast receiver for the given address/port
+udp_receiver * udp_receiver_blocking_new(char* address_string, int port) {
     udp_receiver * rec = PAX_MALLOC(sizeof(udp_receiver));
 
     struct ip_mreq mreq;
@@ -282,6 +291,18 @@ udp_receiver * udp_receiver_new(char* address_string, int port) {
     // Bind the socket 
     if (bind(rec->sock, (struct sockaddr *) &rec->addr, sizeof(struct sockaddr_in)) != 0) {
         perror("bind");
+        return NULL;
+    }
+    return rec;
+}
+
+//Creates a new non-blocking UDP multicast receiver for the given address/port
+udp_receiver * udp_receiver_new(char* address_string, int port) {
+
+    udp_receiver * rec;
+    rec = udp_receiver_blocking_new(address_string, port);
+
+    if(rec == NULL) {
         return NULL;
     }
 
@@ -336,6 +357,7 @@ int udp_read_next_message(udp_receiver * recv_info) {
     //Error in recvfrom
     if (msg_size < 0) {
         perror("recvfrom");
+        sleep(1);
         return -1;
     }
     

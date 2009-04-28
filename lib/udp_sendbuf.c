@@ -212,9 +212,31 @@ void sendbuf_add_submit_val(udp_send_buffer * sb, char * value, size_t val_size)
 
     sb->dirty = 1;
     m->data_size += val_size;
-    memcpy(m->data, value, val_size);    
+    memcpy(m->data, value, val_size);
+}
+
+void sendbuf_send_ping(udp_send_buffer * sb, short int proposer_id, long unsigned int sequence_number) {
+    paxos_msg * m = (paxos_msg *) &sb->buffer;
+    sb->dirty = 1;
+    m->type = alive_ping;
+    m->data_size = sizeof(alive_ping_msg);
+    alive_ping_msg * ap = (alive_ping_msg *) m->data;
+    ap->proposer_id = proposer_id;
+    ap->sequence_number = sequence_number;
+    sendbuf_flush(sb);
+}
+
+void sendbuf_send_leader_announce(udp_send_buffer * sb, short int leader_id) {
+    paxos_msg * m = (paxos_msg *) &sb->buffer;
+    sb->dirty = 1;
+    m->type = leader_announce;
+    m->data_size = sizeof(leader_announce_msg);
+    leader_announce_msg * la = (leader_announce_msg *) m->data;
+    la->current_leader = leader_id;
+    sendbuf_flush(sb);
     
 }
+
 
 
 //Flushes (sends) the current message in buffer, 

@@ -24,14 +24,29 @@ short int this_proposer_id = -1;
 short int current_leader_id = 0;
 #define LEADER_IS_ME (this_proposer_id == current_leader_id)
 
+//Sequence number of the alive message periodically sent to failure oracle
+long unsigned int alive_ping_seqno = 0;
+
+//UDP socket manager for send/recv oracle messages
+static udp_send_buffer * to_oracle;
+static udp_receiver * from_oracle;
+
+
 //UDP socket managers for sending
 static udp_send_buffer * to_acceptors;
 
 //UDP socket manager for receiving
 static udp_receiver * for_proposer;
 
-//Event: Message received
+//Event: Message received (from acceptors)
 static struct event proposer_msg_event;
+//Event: Message received (from oracle)
+static struct event oracle_msg_event;
+//Event: Time to ping failure oracle
+static struct event fe_ping_event;
+
+//Time interval for pings
+struct timeval fe_ping_interval;
 
 typedef enum instance_status_e {
     empty, 
@@ -265,10 +280,69 @@ pro_handle_newmsg(int sock, short event, void *arg) {
         break;
 
         default: {
-            printf("Unknow msg type %d received by proposer\n", msg->type);
+            printf("Unknow msg type %d received from acceptors\n", msg->type);
         }
     }
 }
+
+//This function is invoked when a new message is ready to be read
+// from the leader election oracle UDP socket
+static void 
+pro_handle_oracle_msg(int sock, short event, void *arg) {
+    //Make the compiler happy!
+    UNUSED_ARG(sock);
+    UNUSED_ARG(event);
+    UNUSED_ARG(arg);
+    
+    assert(sock == from_oracle->sock);
+    
+    //Read the next message
+    int valid = udp_read_next_message(from_oracle);
+    if (valid < 0) {
+        printf("Dropping invalid oracle message\n");
+        return;
+    }
+
+    //The message is valid, take the appropriate action
+    // based on the type
+    paxos_msg * msg = (paxos_msg*) &from_oracle->recv_buffer;
+    switch(msg->type) {
+        case leader_announce: {
+            leader_announce_msg * la = (leader_announce_msg *)msg->data;
+            if(LEADER_IS_ME && la->current_leader != this_proposer_id) {
+            //Some other proposer was nominated leader instead of this one, 
+            // step down from leadership
+                leader_shutdown();
+            } else if (!LEADER_IS_ME 
+                && la->current_leader == this_proposer_id) {
+            //This proposer has just been promoted to leader
+                leader_init();
+            }
+            current_leader_id = la->current_leader;
+        }
+        break;
+
+        default: {
+            printf("Unknow msg type %d received from oracle\n", msg->type);
+        }
+    }
+}
+
+//Called when it's time to ping the failure oracle
+static void 
+pro_ping_failure_detector(int sock, short event, void *arg) {
+    UNUSED_ARG(sock);
+    UNUSED_ARG(event);
+    UNUSED_ARG(arg);
+    
+    alive_ping_seqno += 1;
+    sendbuf_send_ping(to_oracle, this_proposer_id, alive_ping_seqno);
+    
+    int ret;
+    ret = event_add(&fe_ping_event, &fe_ping_interval);
+    assert(ret == 0);
+}
+
 
 /*-------------------------------------------------------------------------*/
 // Initialization
@@ -298,8 +372,33 @@ init_pro_network() {
 
 //Initialize timers
 static int 
-init_pro_timers() {
-    // TODO remove?
+init_pro_fd_events() {
+    
+    // Send buffer for sending alive pings
+    to_oracle = udp_sendbuf_new(PAXOS_PINGS_NET);
+    if(to_oracle == NULL) {
+        printf("Error creating proposer->oracle network sender\n");
+        return PROPOSER_ERROR;
+    }
+    
+    // Message receive event (from oracle)
+    from_oracle = udp_receiver_new(PAXOS_ORACLE_NET);
+    if (from_oracle == NULL) {
+        printf("Error creating oracle->proposer network receiver\n");
+        return PROPOSER_ERROR;
+    }
+    event_set(&oracle_msg_event, from_oracle->sock, EV_READ|EV_PERSIST, pro_handle_oracle_msg, NULL);
+    event_add(&oracle_msg_event, NULL);
+
+    //Set timer for sending alive pings
+    evtimer_set(&fe_ping_event, pro_ping_failure_detector, NULL);
+    evutil_timerclear(&fe_ping_interval);
+    fe_ping_interval.tv_sec = (FAILURE_DETECTOR_PING_INTERVAL / 1000000);
+    fe_ping_interval.tv_usec = (FAILURE_DETECTOR_PING_INTERVAL % 1000000);
+
+    //Send the first alive ping
+    pro_ping_failure_detector(0, 0, NULL);
+    
     return 0;
 }
 
@@ -338,7 +437,7 @@ static int init_proposer() {
     }
 
     //Add additional timers to libevent loop
-    if(init_pro_timers() != 0){
+    if(init_pro_fd_events() != 0){
         printf("Proposer timers init failed\n");
         return -1;
     }
@@ -348,7 +447,7 @@ static int init_proposer() {
         printf("Proposer structs init failed\n");
         return -1;
     }
-    
+        
     //By default, proposer 0 starts as leader, 
     // later on the failure detector may change that
     if(LEADER_IS_ME) {
