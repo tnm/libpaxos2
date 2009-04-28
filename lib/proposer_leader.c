@@ -46,11 +46,9 @@ leader_print_event_counters(int fd, short event, void *arg) {
     printf("-----------------------------------------------\n");
     
     //Keep printing if the current leader is still this proposer
-    if(LEADER_IS_ME) {
-        int ret;
-        ret = event_add(&print_events_event, &print_events_interval);
-        assert(ret == 0);
-    }
+    int ret;
+    ret = event_add(&print_events_event, &print_events_interval);
+    assert(ret == 0);
 
 }
 #endif
@@ -327,7 +325,7 @@ leader_open_instances_p2_new() {
         //No value to send for next unused, stop
         if(ii->p1_value == NULL &&
             vh_pending_list_size() == 0) {
-                LOG(0, ("No value to use for next instance\n"));
+                LOG(DBG, ("No value to use for next instance\n"));
                 break;
         }
 
@@ -538,6 +536,10 @@ leader_shutdown() {
 
     evtimer_del(&p1_check_event);
     evtimer_del(&p2_check_event);
+    
+#ifdef LEADER_EVENTS_UPDATE_INTERVAL
+    evtimer_del(&print_events_event);
+#endif
 
     //Iterate over currently open instances 
     p_inst_info * ii;

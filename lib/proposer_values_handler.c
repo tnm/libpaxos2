@@ -87,8 +87,11 @@ vh_init() {
 
 void 
 vh_shutdown() {
-    //TODO Delete event
-    //TODO Close socket    
+    //Delete event
+    event_del(&leader_msg_event);
+
+    //Close socket and free receiver
+    udp_receiver_destroy(for_leader);
     
     //All values in pending could not be delivered yet.
     // Notify the respective clients

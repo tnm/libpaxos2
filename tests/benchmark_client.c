@@ -206,7 +206,7 @@ int main (int argc, char const *argv[])
     end_time = start_time + duration;
     
     //Default timeout for values
-    values_timeout.tv_sec = 15;
+    values_timeout.tv_sec = 5;
     values_timeout.tv_usec = 0;
     
     //Default timeout check interval
