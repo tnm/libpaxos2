@@ -77,10 +77,18 @@ leader_check_p1_pending() {
         if(ii->status == p1_pending) {
             LOG(DBG, ("Phase 1 of instance %ld expired!\n", ii->iid));
 
-            ii->my_ballot = NEXT_BALLOT(ii->my_ballot);
+            //Reset fields used for previous phase 1
             ii->promises_bitvector = 0;
             ii->promises_count = 0;
             ii->p1_value_ballot = 0;
+            if(ii->p1_value != NULL) {
+                PAX_FREE(ii->p1_value);
+            }
+            ii->p1_value = NULL;
+            
+            //Ballot is incremented
+            ii->my_ballot = NEXT_BALLOT(ii->my_ballot);
+
 
             //Send prepare to acceptors
             sendbuf_add_prepare_req(to_acceptors, ii->iid, ii->my_ballot);        
