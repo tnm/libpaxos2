@@ -102,6 +102,8 @@ pro_clear_instance_info(p_inst_info * ii) {
     ii->status = empty;
     ii->my_ballot = 0;
     ii->p1_value_ballot = 0;
+    ii->promises_bitvector = 0;
+    ii->promises_count = 0;
     if(ii->p1_value != NULL) {
         PAX_FREE(ii->p1_value);
     }
