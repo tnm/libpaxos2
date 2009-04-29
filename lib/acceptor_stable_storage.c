@@ -19,6 +19,8 @@ BDB Forums @ Oracle
 #include "libpaxos_priv.h"
 #include "acceptor_stable_storage.h"
 
+//Size of cache <GB, B, ncaches
+#define MEM_CACHE_SIZE (0), (4*1024*1024)
 //DB env handle, DB handle, Transaction handle 
 static DB_ENV *dbenv;
 static DB *dbp;
@@ -62,12 +64,27 @@ int bdb_init_tx_handle(int tx_mode) {
     //Redirect errors to sdout
     dbenv->set_errfile(dbenv, stdout);
     
+    //Set the size of the memory cache
+    result = dbenv->set_cachesize(dbenv, MEM_CACHE_SIZE, 1);
+    if (result != 0) {
+        printf("DB_ENV set_cachesize failed: %s\n", db_strerror(result));
+        return -1;
+    }
+    
+    //TODO see page size impact
+    //Set page size for this db
+    // result = dbp->set_pagesize(dbp, pagesize);
+    // assert(result  == 0);
+
+    //FIXME set log size
+
+    
     // Environment open flags
     int flags;
     flags =
         DB_CREATE       |  /* Create if not existing */ 
         DB_RECOVER      |  /* Run normal recovery. */
-        DB_INIT_LOCK    |  /* Initialize the locking subsystem */
+        // DB_INIT_LOCK    |  /* Initialize the locking subsystem */
         DB_INIT_LOG     |  /* Initialize the logging subsystem */
         DB_INIT_TXN     |  /* Initialize the transactional subsystem. */
         DB_PRIVATE      |  /* DB is for this process only */
@@ -88,19 +105,6 @@ int bdb_init_tx_handle(int tx_mode) {
     return 0;
 }
 
-int bdb_set_db_options() {
-    //Set page size for this db
-    // result = dbp->set_pagesize(dbp, pagesize);
-    // assert(result  == 0);
-
-
-    
-    //Set the size of the memory cache
-    // result = dbenv->set_cachesize(dbenv, 0, MEM_CACHE_SIZE, 1);
-    // assert(result == 0);
-    return 0;
-}
-
 int bdb_init_db(char * db_path) {
     int result;
     //Create the DB file
@@ -110,10 +114,13 @@ int bdb_init_db(char * db_path) {
         return -1;
     }
     
-    //Set various options before opening
-    if (bdb_set_db_options() != 0) {
-        printf("Failed to set DB options\n");
-        return -1;
+    if(DURABILITY_MODE == 0 || DURABILITY_MODE == 20) {
+        //Set the size of the memory cache
+        result = dbp->set_cachesize(dbp, MEM_CACHE_SIZE, 1);
+        if (result != 0) {
+            printf("DBP set_cachesize failed: %s\n", db_strerror(result));
+            return -1;
+        }
     }
     
     // DB flags
@@ -121,6 +128,7 @@ int bdb_init_db(char * db_path) {
         DB_CREATE;          /*Create if not existing*/
 
     stablestorage_tx_begin();
+
     //Open the DB file
     result = dbp->open(dbp,
         txn,                    /* Transaction pointer */
@@ -215,6 +223,13 @@ int stablestorage_init(int acceptor_id) {
         }
         break;
         
+        case 20: {
+            //Give full path if opening without handle
+            printf("manual db flush\n");
+            db_file = db_file_path;
+        }
+        break;
+
         default: {
             printf("Unknow durability mode %d!\n", DURABILITY_MODE);
             return -1;
@@ -245,6 +260,7 @@ int stablestorage_shutdown() {
 
     switch(DURABILITY_MODE) {
         case 0:
+        case 20:
         break;
         
         //Transactional storage
@@ -274,7 +290,7 @@ int stablestorage_shutdown() {
 void 
 stablestorage_tx_begin() {
 
-    if(DURABILITY_MODE == 0) {
+    if(DURABILITY_MODE == 0 || DURABILITY_MODE == 20) {
         return;
     }
 
@@ -286,12 +302,17 @@ stablestorage_tx_begin() {
 //Commits the transaction to stable storage
 void 
 stablestorage_tx_end() {
+    int result;
 
     if(DURABILITY_MODE == 0) {
         return;
     }
+    if (DURABILITY_MODE == 20) {
+        result = dbp->sync(dbp, 0);
+        assert(result == 0);
+        return;
+    }
 
-    int result;
     //Since it's either read only or write only
     // and there is no concurrency, should always commit!
     result = txn->commit(txn, 0);

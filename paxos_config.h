@@ -126,8 +126,10 @@
     Durability despite OS crash:
     13  -> Transactional Data Store (write, sync on commit)
         (default transactional storage)
+    20  -> "Manually" call DB->sync before answering requests
+        (may corrupt database file on crash)
 */
-#define DURABILITY_MODE 13
+#define DURABILITY_MODE 0
 
 /*
     This defines where the acceptors create their database files.
