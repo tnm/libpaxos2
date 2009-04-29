@@ -456,7 +456,7 @@ int acceptor_init(int acceptor_id) {
         return -1;
     }
     
-    LOG(VRB, ("Acceptor is ready\n"));
+    printf("Acceptor %d is ready\n", this_acceptor_id);
     return 0;
 }
 

@@ -1,4 +1,5 @@
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include <errno.h>
 #include <sys/stat.h>
@@ -16,6 +17,7 @@ BDB Forums @ Oracle
 #include <db.h>
 
 #include "libpaxos_priv.h"
+#include "acceptor_stable_storage.h"
 
 //DB env handle, DB handle, Transaction handle 
 static DB_ENV *dbenv;
@@ -36,70 +38,36 @@ void stablestorage_do_recovery() {
     do_recovery = 1;
 }
 
-//Initializes the underlying stable storage
-int stablestorage_init(int acceptor_id) {
-    int result;
-    int flags = 0;
-    
-    //Check if the environment dir exists
-    char db_env_path[512];
-    sprintf(db_env_path, ACCEPTOR_DB_PATH);
-    
-    struct stat sb;
-    int dir_exists = (stat(db_env_path, &sb) == 0);
+static char db_env_path[512];
+static char db_filename[512];
+static char db_file_path[512];
 
-    //Previous DB exists, try to discard it
-    if(do_recovery) {
-        //Recovery, old DB not found
-        if(!dir_exists) {
-            printf("WARNING: Old DB not found when trying to recover!\n");
-            if (mkdir(db_env_path, S_IRWXU) != 0) {
-                printf("Failed to create env dir %s: %s\n", db_env_path, strerror(errno));
-                return -1;
-            }
-        }
-        LOG(VRB, ("Opening env in: %s [recovery mode]\n", db_env_path));   
-    } else {
-        //Not Recovery
-        if(dir_exists) {
-            //Delete the old DB if exists
-            LOG(VRB, ("Opening env in: %s [created empty]\n", db_env_path));        
-            if(remove(db_env_path)) {
-                printf("Failed to remove old db in %s\n", db_env_path);
-                return -1;
-            }
-        }
-        //Create new env dir
-        if (mkdir(db_env_path, S_IRWXU) != 0) {
-            printf("Failed to create env dir %s: %s\n", db_env_path, strerror(errno));
-            return -1;
-        }
-    }
-        
+int bdb_init_tx_handle(int tx_mode) {
+    int result;
+
     //Create environment handle
     result = db_env_create(&dbenv, 0);
     if (result != 0) {
         printf("DB_ENV creation failed: %s\n", db_strerror(result));
         return -1;
     }
-    dbenv->set_errfile(dbenv, stdout);	
 
     //Durability mode, see paxos_config.h
-    result = dbenv->set_flags(dbenv, BDB_TX_MODE, 1);
+    result = dbenv->set_flags(dbenv, tx_mode, 1);
     if (result != 0) {
         printf("DB_ENV set_flags failed: %s\n", db_strerror(result));
         return -1;
     }
+    	
+    //Redirect errors to sdout
+    dbenv->set_errfile(dbenv, stdout);
     
-    //Set the size of the memory cache
-    // result = dbenv->set_cachesize(dbenv, 0, MEM_CACHE_SIZE, 1);
-    // assert(result == 0);
-
-    // Env flags
+    // Environment open flags
+    int flags;
     flags =
         DB_CREATE       |  /* Create if not existing */ 
         DB_RECOVER      |  /* Run normal recovery. */
-        // DB_INIT_LOCK    |  /* Initialize the locking subsystem */
+        DB_INIT_LOCK    |  /* Initialize the locking subsystem */
         DB_INIT_LOG     |  /* Initialize the logging subsystem */
         DB_INIT_TXN     |  /* Initialize the transactional subsystem. */
         DB_PRIVATE      |  /* DB is for this process only */
@@ -111,11 +79,30 @@ int stablestorage_init(int acceptor_id) {
         db_env_path,            /* Environment directory */
         flags,                  /* Open flags */
         0);                     /* Default file permissions */
+
     if (result != 0) {
         printf("DB_ENV open failed: %s\n", db_strerror(result));
         return -1;
     }
+    
+    return 0;
+}
 
+int bdb_set_db_options() {
+    //Set page size for this db
+    // result = dbp->set_pagesize(dbp, pagesize);
+    // assert(result  == 0);
+
+
+    
+    //Set the size of the memory cache
+    // result = dbenv->set_cachesize(dbenv, 0, MEM_CACHE_SIZE, 1);
+    // assert(result == 0);
+    return 0;
+}
+
+int bdb_init_db(char * db_path) {
+    int result;
     //Create the DB file
     result = db_create(&dbp, dbenv, 0);
     if (result != 0) {
@@ -123,29 +110,123 @@ int stablestorage_init(int acceptor_id) {
         return -1;
     }
     
-    //Set page size for this db
-    // result = dbp->set_pagesize(dbp, pagesize);
-    // assert(result  == 0);
-
-    char db_filename[512];
-    sprintf(db_filename, ACCEPTOR_DB_FNAME);
-    LOG(VRB, ("Opening db file %s/%s\n", db_env_path, db_filename));    
+    //Set various options before opening
+    if (bdb_set_db_options() != 0) {
+        printf("Failed to set DB options\n");
+        return -1;
+    }
     
     // DB flags
-    flags = 
-        DB_AUTO_COMMIT |    /*Wrap all operations in a TX*/
+    int flags = 
         DB_CREATE;          /*Create if not existing*/
 
+    stablestorage_tx_begin();
     //Open the DB file
     result = dbp->open(dbp,
-        NULL,                   /* Transaction pointer */
-        db_filename,            /* On-disk file that holds the database. */
+        txn,                    /* Transaction pointer */
+        db_path,                /* On-disk file that holds the database. */
         NULL,                   /* Optional logical database name */
         ACCEPTOR_ACCESS_METHOD, /* Database access method */
         flags,                  /* Open flags */
         0);                     /* Default file permissions */
+
+    stablestorage_tx_end();
+
     if(result != 0) {
         printf("DB open failed: %s\n", db_strerror(result));
+        return -1;
+    }
+    
+    return 0;
+}
+
+//Initializes the underlying stable storage
+int stablestorage_init(int acceptor_id) {
+    
+    //Create path to db file in db dir
+    sprintf(db_env_path, ACCEPTOR_DB_PATH);    
+    sprintf(db_filename, ACCEPTOR_DB_FNAME);
+    sprintf(db_file_path, "%s/%s", db_env_path, db_filename);
+    LOG(VRB, ("Opening db file %s/%s\n", db_env_path, db_filename));    
+
+    struct stat sb;
+    //Check if the environment dir and db file exists
+    int dir_exists = (stat(db_env_path, &sb) == 0);
+    int db_exists = (stat(db_file_path, &sb) == 0);
+
+    //Check for old db file if running recovery
+    if(do_recovery && (!dir_exists || !db_exists)) {
+        printf("Error: Acceptor recovery failed!\n");
+        printf("The file:%s does not exist\n", db_file_path);
+        return -1;
+    }
+    
+    //Create the directory if it does not exist
+    if(!dir_exists && (mkdir(db_env_path, S_IRWXU) != 0)) {
+        printf("Failed to create env dir %s: %s\n", db_env_path, strerror(errno));
+        return -1;
+    } 
+    
+    //Delete and recreate an empty dir if not recovering
+    if(!do_recovery && dir_exists) {
+        char rm_command[600];
+        sprintf(rm_command, "rm -r %s", db_env_path);
+        
+        if((system(rm_command) != 0) || 
+            (mkdir(db_env_path, S_IRWXU) != 0)) {
+            printf("Failed to recreate empty env dir %s: %s\n", db_env_path, strerror(errno));
+        }
+    }
+    
+    int ret = 0;
+    char * db_file = db_filename;
+    printf("Durability mode is: ");
+    switch(DURABILITY_MODE) {
+        //In memory cache
+        case 0: {
+            //Give full path if opening without handle
+            printf("no durability!\n");
+            db_file = db_file_path;
+        }
+        break;
+        
+        //Transactional storage
+        case 10: {
+            printf("transactional, no durability!\n");
+            ret = bdb_init_tx_handle(DB_LOG_IN_MEMORY);
+        }
+        break;
+
+        case 11: {
+            printf("transactional, DB_TXN_NOSYNC\n");
+            ret = bdb_init_tx_handle(DB_TXN_NOSYNC);
+        }
+        break;
+
+        case 12: {
+            printf("transactional, DB_TXN_WRITE_NOSYNC\n");
+            ret = bdb_init_tx_handle(DB_TXN_WRITE_NOSYNC);
+        }
+        break;
+
+        case 13: {
+            printf("transactional, durable\n");
+            ret = bdb_init_tx_handle(0);
+        }
+        break;
+        
+        default: {
+            printf("Unknow durability mode %d!\n", DURABILITY_MODE);
+            return -1;
+        }
+    }
+    
+    if(ret != 0) {
+        printf("Failed to open DB handle\n");
+    }
+    
+    if(bdb_init_db(db_file) != 0) {
+        printf("Failed to open DB file\n");
         return -1;
     }
     
@@ -162,11 +243,28 @@ int stablestorage_shutdown() {
         result = -1;
     }
 
-    //Close handle
-    if(dbenv->close(dbenv, 0) != 0) {
-        printf("DB close failed\n");
-        result = -1;
-    }
+    switch(DURABILITY_MODE) {
+        case 0:
+        break;
+        
+        //Transactional storage
+        case 10:
+        case 11:
+        case 12:
+        case 13: {
+            //Close handle
+            if(dbenv->close(dbenv, 0) != 0) {
+                printf("DB close failed\n");
+                result = -1;
+            }
+        }
+        break;
+        
+        default: {
+            printf("Unknow durability mode %d!\n", DURABILITY_MODE);
+            return -1;
+        }
+    }    
  
     LOG(VRB, ("DB close completed\n"));  
     return result;
@@ -175,6 +273,11 @@ int stablestorage_shutdown() {
 //Begins a new transaction in the stable storage
 void 
 stablestorage_tx_begin() {
+
+    if(DURABILITY_MODE == 0) {
+        return;
+    }
+
     int result;
     result = dbenv->txn_begin(dbenv, NULL, &txn, 0);
     assert(result == 0);
@@ -183,6 +286,11 @@ stablestorage_tx_begin() {
 //Commits the transaction to stable storage
 void 
 stablestorage_tx_end() {
+
+    if(DURABILITY_MODE == 0) {
+        return;
+    }
+
     int result;
     //Since it's either read only or write only
     // and there is no concurrency, should always commit!

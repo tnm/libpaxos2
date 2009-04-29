@@ -110,14 +110,24 @@
 /*** ACCEPTORS DB SETTINGS ***/
 /*
     Setting for how 'strict' the durability of acceptors should be.
-    0 is the only truly durable setting, also the slowest.
-    DB_LOG_IN_MEMORY: Transactional Data Store (write, in-memory logging)
-    DB_TXN_NOSYNC: Transactional Data Store (write, no-sync on commit)
-    DB_TXN_WRITE_NOSYNC: Transactional Data Store (write, write-no-sync on commit)
-    0: Transactional Data Store (write, sync on commit)
+    From weaker and faster to stricter and durable.
     Acceptors use Berkeley DB as a stable storage layer.
+    
+    No durability on crash:
+    0   -> Uses in-memory storage
+        Writes to disk if the memory cache is full.
+    10  -> Transactional Data Store (write, in-memory logging)
+        (DB_LOG_IN_MEMORY)
+    Durability despite process crash:
+    11  -> Transactional Data Store (write, no-sync on commit)
+        (DB_TXN_NOSYNC)
+    12 ->Transactional Data Store (write, write-no-sync on commit)
+        (DB_TXN_WRITE_NOSYNC)
+    Durability despite OS crash:
+    13  -> Transactional Data Store (write, sync on commit)
+        (default transactional storage)
 */
-#define BDB_TX_MODE 0
+#define DURABILITY_MODE 13
 
 /*
     This defines where the acceptors create their database files.
