@@ -11,13 +11,6 @@
 
 int start_time;
 int end_time;
-unsigned int concurrent_values = 30;
-struct timeval values_timeout;
-int min_val_size = 30;
-// int max_val_size = PAXOS_MAX_VALUE_SIZE;
-int max_val_size = 300;
-int duration = 120;
-int print_step = 10;
 
 int delivered_count = 0;
 int submitted_count = 0;
@@ -36,6 +29,71 @@ typedef struct client_value_record_t {
 client_value_record * values_table;
 
 paxos_submit_handle * psh = NULL;
+
+//Parameters
+unsigned int concurrent_values = 30;
+int min_val_size = 30;
+int max_val_size = PAXOS_MAX_VALUE_SIZE;
+int duration = 120;
+int print_step = 10;
+struct timeval values_timeout;
+
+void pusage() {
+    printf("benchmark_client options:\n");
+    printf("\t-c N : submit N values concurrently\n");
+    printf("\t-m N : min value size is N bytes\n");
+    printf("\t-M N : max value size is N bytes\n");
+    printf("\t-d N : duration is N seconds\n");
+    printf("\t-t N : submit timeout is N seconds\n");
+    printf("\t-p N : print submit count every N values\n");    
+    printf("\t-h   : prints this message\n");    
+}
+
+void parse_args(int argc, char * const argv[]) {
+    values_timeout.tv_sec = 10;
+    values_timeout.tv_usec = 0;
+
+    int c;
+    while((c = getopt(argc, argv, "c:m:M:d:t:p:h")) != -1) {
+        switch(c) {
+            case 'c': {
+                concurrent_values = atoi(optarg);
+            }
+            break;
+
+            case 'm': {
+                min_val_size = atoi(optarg);
+            }
+            break;
+
+            case 'M': {
+                max_val_size = atoi(optarg);
+            }
+            break;
+
+            case 'd': {
+                duration = atoi(optarg);
+            }
+            break;
+
+            case 't': {
+                values_timeout.tv_sec = atoi(optarg);
+            }
+            break;
+
+            case 'p': {
+                print_step = atoi(optarg);
+            }
+            break;
+            
+            case 'h':
+            default: {
+                pusage();
+                exit(0);
+            }
+        }
+    }    
+}
 
 static void 
 sum_timevals(struct timeval * dest, struct timeval * t1, struct timeval * t2) {
@@ -199,8 +257,9 @@ void cl_deliver(char* value, size_t val_size, iid_t iid, ballot_t ballot, int pr
     proposer = proposer;
 }
 
-int main (int argc, char const *argv[])
-{
+int main (int argc, char const *argv[]) {
+    
+    parse_args(argc, (char **)argv);
     
     start_time = time(NULL);
     end_time = start_time + duration;
