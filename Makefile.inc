@@ -8,10 +8,6 @@ OBJS		= $(subst .c,.o,$(SRCS))
 CPPFLAGS	= -I../include/ -I../ -I$(BDB_DIR) -I$(LEV_DIR)
 DEPS 		= $(patsubst %.c,.deps/%.d,$(SRCS))
 SNAME		:= $(shell uname)
-LDFLAGS		= -L.. -L$(LEV_DIR) -L$(BDB_DIR) -lpaxos -lpthread -levent -ldb
-ifeq ($(strip $(SNAME)),Linux)
-LDFLAGS		= -L$(LDFLAGS) -lrt
-endif
 
 all: $(OBJS) $(LIBS) $(PROGRAMS) aux
 
