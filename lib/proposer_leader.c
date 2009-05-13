@@ -43,6 +43,8 @@ leader_print_event_counters(int fd, short event, void *arg) {
     printf("p2_waits_p1:%lu\n", lead_counters.p2_waits_p1);
     printf("p2_info.open_count:%u\n", p2_info.open_count);
     printf("p2_info.next_unused_iid:%lu\n", p2_info.next_unused_iid);
+    printf("Misc._______________________:\n");
+    printf("dropped_count:%lu\n", vh_get_dropped_count());
     printf("-----------------------------------------------\n");
     
     //Keep printing if the current leader is still this proposer

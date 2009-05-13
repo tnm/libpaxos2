@@ -67,6 +67,7 @@
     Paxos     -> ((int)(N_OF_ACCEPTORS/2))+1;
     FastPaxos -> 1 + (int)((double)(N_OF_ACCEPTORS*2)/3);
 */
+
 #define QUORUM (((int)(N_OF_ACCEPTORS/2))+1)
 
 /* 
@@ -98,8 +99,16 @@
 */
 #define LEARNER_HOLECHECK_INTERVAL 2000000
 
+/*
+    The maximum size of the pending list of values in the leader proposer.
+    It has to be limited since client my retry to submit too early, if they send 
+    at a rate higher than the proposer can digest, the list grows to infinity
+*/
+#define LEADER_MAX_QUEUE_LENGTH 500
+
 
 /*** FAILURE DETECTOR SETTINGS ***/
+
 /*
     How frequently each proposer sends it's 'alive' message
     to the failure oracle.
@@ -108,6 +117,7 @@
 #define FAILURE_DETECTOR_PING_INTERVAL 3000000
 
 /*** ACCEPTORS DB SETTINGS ***/
+
 /*
     Setting for how 'strict' the durability of acceptors should be.
     From weaker and faster to stricter and durable.

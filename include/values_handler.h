@@ -17,5 +17,5 @@ void vh_push_back_value(vh_value_wrapper * vw);
 vh_value_wrapper * vh_get_next_pending();
 int vh_pending_list_size();
 void vh_notify_client(unsigned int result, vh_value_wrapper * vw);
-
+long unsigned int vh_get_dropped_count();
 #endif /* end of include guard: VALUES_HANDLER_H_23R78MJT */

@@ -34,6 +34,7 @@ static iid_t current_iid = 1;
 
 //Highest instance that is already closed 
 // (can be higher than current!)
+//TODO: not used
 static iid_t highest_iid_closed = 0;
 
 //Array (used as a circular buffer) to store instance infos
@@ -265,11 +266,11 @@ lea_hole_check(int fd, short event, void *arg) {
 
     //Periodic check for missing instances
     //(i.e. i+1 closed, but i not closed yet)
-    if(highest_iid_closed > current_iid) {
-        LOG(VRB, ("Out of sync, highest closed:%lu, highest delivered:%lu\n", 
-            highest_iid_closed, current_iid-1));
+    if(highest_iid_seen > current_iid) {
+        LOG(0, ("Out of sync, highest closed:%lu, highest delivered:%lu\n", 
+            highest_iid_seen, current_iid-1));
         //Ask retransmission to acceptors
-        lea_send_repeat_request(current_iid, highest_iid_closed);
+        lea_send_repeat_request(current_iid, highest_iid_seen);
     }
         
     //Set the next timeout for calling this function

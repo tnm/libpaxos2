@@ -245,9 +245,7 @@ void cl_deliver(char* value, size_t val_size, iid_t iid, ballot_t ballot, int pr
                 memcmp(value, iter->value, val_size) == 0) {
             //Our value, submit a new one!
             submit_new_value(iter);
-        } else if (is_expired(&iter->expire_time, &time_now)) {
-            //Value timer expired, resubmit
-            submit_old_value(&values_table[i]);
+            break;
         }    
     }
     

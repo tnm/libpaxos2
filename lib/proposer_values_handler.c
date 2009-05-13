@@ -12,6 +12,7 @@ static int vh_list_size = 0;
 static vh_value_wrapper * vh_list_head = NULL;
 static vh_value_wrapper * vh_list_tail = NULL;
 
+static long unsigned int dropped_count = 0;
 
 static struct event leader_msg_event;
 static udp_receiver * for_leader;
@@ -71,7 +72,7 @@ vh_init() {
     vh_list_size = 0;
     vh_list_head = NULL;
     vh_list_tail = NULL;
-    
+    dropped_count = 0;
     
     // Start listening on net where clients send values
     for_leader = udp_receiver_new(PAXOS_SUBMIT_NET);
@@ -107,9 +108,21 @@ int vh_pending_list_size() {
     return vh_list_size;
 }
 
+long unsigned int vh_get_dropped_count() {
+    return dropped_count;
+}
 
 void vh_enqueue_value(char * value, size_t value_size) {
     //Create wrapper
+    
+    if(vh_list_size > LEADER_MAX_QUEUE_LENGTH) {
+        LOG(VRB, ("Value dropped, list is already too long\n"));
+#ifdef LEADER_EVENTS_UPDATE_INTERVAL
+        dropped_count += 1;
+#endif
+        return;
+    }
+    
     vh_value_wrapper * new_vw = vh_wrap_value(value, value_size);
     
     /* List is empty*/

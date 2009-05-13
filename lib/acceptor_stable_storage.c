@@ -22,9 +22,10 @@ BDB Forums @ Oracle
 //Size of cache <GB, B, ncaches
 #define MEM_CACHE_SIZE (0), (4*1024*1024)
 //DB env handle, DB handle, Transaction handle 
-static DB_ENV *dbenv;
-static DB *dbp;
-static DB_TXN *txn;
+//FIXME: should be static, but abmagic can't link then
+DB_ENV *dbenv;
+DB *dbp;
+DB_TXN *txn;
 
 //Buffer to read/write current record
 static char record_buf[MAX_UDP_MSG_SIZE];
