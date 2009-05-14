@@ -104,7 +104,6 @@ ab_handle_newval(int sock, short event, void *arg) {
     switch(msg->type) {
         
         case submit: {
-            printf("Got a value\n");
             ab_store_value(msg->data, msg->data_size);
             sendbuf_add_accept_ack(to_learners, accept_buffer);
             current_iid +=1;
@@ -165,7 +164,6 @@ ab_handle_leamsg(int sock, short event, void *arg) {
     switch(msg->type) {
 
         case repeat_reqs: {
-            printf("Got a repeat\n");
             ab_handle_repeat_req_batch((repeat_req_batch*) msg->data);
         }
         break;
@@ -182,7 +180,6 @@ ab_periodic_flush(int sock, short event, void *arg) {
     UNUSED_ARG(sock);
     UNUSED_ARG(event);
     UNUSED_ARG(arg);
-    printf("flush\n");
     
     stablestorage_tx_end();   
     sendbuf_flush(to_learners);
@@ -190,9 +187,7 @@ ab_periodic_flush(int sock, short event, void *arg) {
     
     if(event_add(&flush_event, &flush_interval) != 0) {
 	   printf("Error while adding first periodic flush event\n");
-       return -1;
 	}
-
 }
 
 static int 
@@ -278,4 +273,7 @@ int main (int argc, char const *argv[]) {
     //Event loop, does not return
     event_dispatch();
     return 0;
+    
+    argc = argc;
+    argv = argv;
 }

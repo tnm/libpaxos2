@@ -38,6 +38,12 @@ int duration = 120;
 int print_step = 10;
 struct timeval values_timeout;
 
+//Latency statistics
+struct timeval min_latency;
+struct timeval max_latency;
+struct timeval aggregated_latency;
+long unsigned int aggregated_latency_count = 0;
+
 void pusage() {
     printf("benchmark_client options:\n");
     printf("\t-c N : submit N values concurrently\n");
@@ -105,6 +111,67 @@ sum_timevals(struct timeval * dest, struct timeval * t1, struct timeval * t2) {
     } else {
         dest->tv_usec = usecs;
     }
+}
+
+//Returns 1 if t1 > t2
+static int
+is_gt_timeval(struct timeval * t1, struct timeval * t2) {
+    return (t1->tv_sec > t2->tv_sec) ||
+        (t1->tv_sec == t2->tv_sec && t1->tv_usec > t2->tv_usec);
+}
+
+//Returns 1 if t1 < t2
+static int
+is_lt_timeval(struct timeval * t1, struct timeval * t2) {
+    return (t1->tv_sec < t2->tv_sec) ||
+        (t1->tv_sec == t2->tv_sec && t1->tv_usec < t2->tv_usec);
+}
+
+//Does t1 = t1 + t2
+static void
+sum_in_place_timevals(struct timeval * t1, struct timeval * t2) {
+    t1->tv_sec += t2->tv_sec;
+    t1->tv_usec += t2->tv_usec;
+    if(t1->tv_usec >= 1000000) {
+        t1->tv_sec += 1;
+        t1->tv_usec = (t1->tv_usec % 1000000);
+    }
+}
+
+//Does t1 = t1 - t2 [t2 must be before (<=) t1]
+static void
+subtract_in_place_timevals(struct timeval * t1, struct timeval * t2) {
+    t1->tv_sec -= t2->tv_sec;
+    if(t2->tv_usec < t1->tv_usec) {
+        t1->tv_usec -= t2->tv_usec;
+    } else {
+        t1->tv_sec -= 1;
+        t1->tv_usec += 1000000;
+        t1->tv_usec -= t2->tv_usec;
+    }
+}
+
+
+static void 
+save_latency_info (client_value_record * cvr, struct timeval * curr_time) {
+    //Calculate time from 1st submit to deliver
+    subtract_in_place_timevals(curr_time, &cvr->creation_time);
+    struct timeval * time_taken = curr_time;
+    
+    //If greater than max store
+    if(is_gt_timeval(time_taken, &max_latency)) {
+        max_latency.tv_sec = time_taken->tv_sec;
+        max_latency.tv_usec = time_taken->tv_usec;
+    }
+
+    //If less than min store
+    if(is_lt_timeval(time_taken, &min_latency)) {
+        min_latency.tv_sec = time_taken->tv_sec;
+        min_latency.tv_usec = time_taken->tv_usec;
+    }
+    
+    sum_in_place_timevals(&aggregated_latency, time_taken);
+    aggregated_latency_count += 1;
 }
 
 static void 
@@ -244,6 +311,7 @@ void cl_deliver(char* value, size_t val_size, iid_t iid, ballot_t ballot, int pr
         if(val_size == iter->value_size && 
                 memcmp(value, iter->value, val_size) == 0) {
             //Our value, submit a new one!
+            save_latency_info(iter, &time_now);
             submit_new_value(iter);
             break;
         }    
@@ -267,9 +335,16 @@ int main (int argc, char const *argv[]) {
     values_timeout.tv_usec = 0;
     
     //Default timeout check interval
-    cl_periodic_interval.tv_sec = 5;
+    cl_periodic_interval.tv_sec = 3;
     cl_periodic_interval.tv_usec = 0;
-
+    
+    //Clear latency statistics
+    min_latency.tv_sec = 999999;
+    min_latency.tv_usec = 999999;
+    max_latency.tv_sec = 0;
+    max_latency.tv_usec = 0;
+    aggregated_latency.tv_sec = 0;
+    aggregated_latency.tv_usec = 0;
     
     if(learner_init(cl_deliver, cl_init) != 0) {
         printf("Failed to start the learner!\n");
@@ -286,6 +361,15 @@ int main (int argc, char const *argv[]) {
     printf("Total submitted:%u\n", submitted_count);
     printf("\tRate:%f\n", ((float)submitted_count/duration));
     printf("Timed-out values:%u\n", retried_count);
+
+    double min_lat_ms = ((double)min_latency.tv_sec * 1000) +
+        ((double)min_latency.tv_usec / 1000);
+    double max_lat_ms = ((double)max_latency.tv_sec * 1000) +
+        ((double)max_latency.tv_usec / 1000);
+    double avg_lat_ms = (((double)aggregated_latency.tv_sec * 1000) +
+        ((double)aggregated_latency.tv_usec / 1000))/aggregated_latency_count;
     
+    printf("Latency - Avg:%.2f, Min:%.2f, Max:%.2f\n", 
+        avg_lat_ms, min_lat_ms, max_lat_ms);
     return 0;
 }
