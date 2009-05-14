@@ -266,13 +266,17 @@ lea_hole_check(int fd, short event, void *arg) {
 
     //Periodic check for missing instances
     //(i.e. i+1 closed, but i not closed yet)
-    if(highest_iid_seen > current_iid) {
-        LOG(0, ("Out of sync, highest closed:%lu, highest delivered:%lu\n", 
+    if (highest_iid_seen > current_iid + LEARNER_ARRAY_SIZE) {
+        LOG(0, ("This learner is lagging behind!!!, highest seen:%lu, highest delivered:%lu\n", 
             highest_iid_seen, current_iid-1));
-        //Ask retransmission to acceptors
         lea_send_repeat_request(current_iid, highest_iid_seen);
+    } else if(highest_iid_closed > current_iid) {
+        LOG(0, ("Out of sync, highest closed:%lu, highest delivered:%lu\n", 
+            highest_iid_closed, current_iid-1));
+        //Ask retransmission to acceptors
+        lea_send_repeat_request(current_iid, highest_iid_closed);
     }
-        
+
     //Set the next timeout for calling this function
     if(event_add(&hole_check_event, &hole_check_interval) != 0) {
 	   printf("Error while adding next hole_check event\n");
