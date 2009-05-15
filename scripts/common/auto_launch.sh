@@ -65,6 +65,18 @@ function launch_background_proposer () {
 	ssh $host "$BASEDIR/example_proposer $p_id &> $logfile" &
 }
 
+CLIENT_COUNT=0;
+function launch_background_client () {
+	local bench_args=$1
+    # local logfile=$2
+	local host=$2
+	let 'CLIENT_COUNT += 1'
+	local logfile="$LOGDIR/client_$CLIENT_COUNT"
+
+	echo "Starting client $CLIENT_COUNT on host $host"
+	echo "(logs to: $logfile)"
+	ssh $host "$BASEDIR/benchmark_client $bench_args &> $logfile" &
+}
 
 function launch_follow () {
 	local cmd=$1
@@ -92,3 +104,17 @@ function remote_kill () {
 	ssh $host "killall -INT $prog"
 }
 
+function remote_kill_all () {
+    local procnames="$1"
+    local first=2;
+    local last=16;
+
+    for (( i = $first; i <= $last; i++ )); do
+        nodenum="$i"
+        if [[ $i -lt 10 ]]; then
+            nodenum="0$i"
+        fi
+        echo "Killing on marco@node$nodenum"
+        ssh "marco@node$nodenum" "killall -INT $procnames"
+    done
+}
