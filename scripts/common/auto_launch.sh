@@ -102,6 +102,15 @@ function launch_background_client () {
 	ssh $host "$BASEDIR/benchmark_client $bench_args &> $logfile" &
 }
 
+function lauch_background_abmagic () {
+	local host=$1
+	local logfile="$LOGDIR/abmagic.txt"
+
+	echo "Starting abmagic on host $host"
+	echo "(logs to: $logfile)"
+	ssh $host "$BASEDIR/abmagic &> $logfile" &
+}
+
 function launch_follow () {
 	local cmd=$1
 	local host=$2
