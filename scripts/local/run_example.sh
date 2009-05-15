@@ -24,7 +24,7 @@ sleep 3;
 xterm -geometry 80x24+10+300 -e "cd $PROJ_DIR; ./example_proposer 0; $KEEP_XTERM_OPEN" &
 sleep 2;
 
-xterm -geometry 80x8+10+600 -e "cd $PROJ_DIR; ./benchmark_client; $KEEP_XTERM_OPEN" &
+xterm -geometry 80x8+10+600 -e "cd $PROJ_DIR; ./benchmark_client -s 10; $KEEP_XTERM_OPEN" &
 
 echo "Press enter to send the kill signal"
 read

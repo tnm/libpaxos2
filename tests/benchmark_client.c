@@ -9,15 +9,15 @@
 #include "event.h"
 #include "libpaxos.h"
 
-int start_time;
-int end_time;
+static int start_time;
+static int end_time;
+ 
+static int delivered_count = 0;
+static int submitted_count = 0;
+static int retried_count = 0;
 
-int delivered_count = 0;
-int submitted_count = 0;
-int retried_count = 0;
-
-struct event cl_periodic_event;
-struct timeval cl_periodic_interval;
+static struct event cl_periodic_event;
+static struct timeval cl_periodic_interval;
 
 typedef struct client_value_record_t {
     struct timeval creation_time;
@@ -26,23 +26,28 @@ typedef struct client_value_record_t {
     char value[PAXOS_MAX_VALUE_SIZE];
 } client_value_record;
 
-client_value_record * values_table;
-
-paxos_submit_handle * psh = NULL;
+static client_value_record * values_table;
+ 
+static paxos_submit_handle * psh = NULL;
 
 //Parameters
 unsigned int concurrent_values = 30;
 int min_val_size = 30;
 int max_val_size = PAXOS_MAX_VALUE_SIZE;
-int duration = 120;
+int duration = 40;
 int print_step = 10;
 struct timeval values_timeout;
 
 //Latency statistics
-struct timeval min_latency;
-struct timeval max_latency;
-struct timeval aggregated_latency;
-long unsigned int aggregated_latency_count = 0;
+static struct timeval min_latency;
+static struct timeval max_latency;
+static struct timeval aggregated_latency;
+static long unsigned int aggregated_latency_count = 0;
+//Sampling random values
+static int sample_frequency = 0;
+static int max_samples = 500;
+static double * samples;
+static int samples_count = 0;
 
 void pusage() {
     printf("benchmark_client options:\n");
@@ -51,7 +56,8 @@ void pusage() {
     printf("\t-M N : max value size is N bytes\n");
     printf("\t-d N : duration is N seconds\n");
     printf("\t-t N : submit timeout is N seconds\n");
-    printf("\t-p N : print submit count every N values\n");    
+    printf("\t-p N : print submit count every N values\n");
+    printf("\t-s N : saves a latency sample every N values sent\n");
     printf("\t-h   : prints this message\n");    
 }
 
@@ -60,7 +66,7 @@ void parse_args(int argc, char * const argv[]) {
     values_timeout.tv_usec = 0;
 
     int c;
-    while((c = getopt(argc, argv, "c:m:M:d:t:p:h")) != -1) {
+    while((c = getopt(argc, argv, "c:m:M:d:t:p:s:h")) != -1) {
         switch(c) {
             case 'c': {
                 concurrent_values = atoi(optarg);
@@ -89,6 +95,12 @@ void parse_args(int argc, char * const argv[]) {
 
             case 'p': {
                 print_step = atoi(optarg);
+            }
+            break;
+            
+            case 's': {
+                sample_frequency = atoi(optarg);
+                samples = malloc(sizeof(double)*max_samples);
             }
             break;
             
@@ -172,6 +184,16 @@ save_latency_info (client_value_record * cvr, struct timeval * curr_time) {
     
     sum_in_place_timevals(&aggregated_latency, time_taken);
     aggregated_latency_count += 1;
+    
+    //Save a latency sample every sample_frequency 
+    // values successfully submitted
+    if(sample_frequency != 0 && 
+    samples_count < max_samples && 
+    aggregated_latency_count % sample_frequency == 0) {
+        samples[samples_count] = ((float)time_taken->tv_sec*1000) +
+            ((float)time_taken->tv_usec/1000);
+        samples_count += 1;
+    }
 }
 
 static void 
@@ -371,5 +393,17 @@ int main (int argc, char const *argv[]) {
     
     printf("Latency - Avg:%.2f, Min:%.2f, Max:%.2f\n", 
         avg_lat_ms, min_lat_ms, max_lat_ms);
+        
+    if(sample_frequency != 0) {
+        printf("Latency samples: \n");
+        int i;
+        for(i = 0; i < samples_count; i++) {
+            printf("%.2f, ", samples[i]);
+            if(i % 20 == 0) {
+                printf("\n");
+            }
+        }
+        printf("\n");
+    }
     return 0;
 }

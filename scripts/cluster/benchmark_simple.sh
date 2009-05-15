@@ -28,6 +28,8 @@ launch_background_client "$CLIENT_ARGS" node09
 # launch_background_client "$CLIENT_ARGS" node10
 launch_background_client "$CLIENT_ARGS" node11
 launch_background_client "$CLIENT_ARGS" node12
+
+CLIENT_ARGS="$CLIENT_ARGS -s 500"
 launch_follow "./benchmark_client $CLIENT_ARGS" node13
 sleep 2
 
