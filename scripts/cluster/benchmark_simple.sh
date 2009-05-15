@@ -25,9 +25,13 @@ sleep 5
 CLIENT_ARGS="-m 30 -M 300 -t 3 -d 30 -c 5 -p 10"
 launch_background_client "$CLIENT_ARGS" node08
 launch_background_client "$CLIENT_ARGS" node09
-launch_background_client "$CLIENT_ARGS" node10
+# launch_background_client "$CLIENT_ARGS" node10
 launch_background_client "$CLIENT_ARGS" node11
-launch_follow "./benchmark_client $CLIENT_ARGS" node12
+launch_background_client "$CLIENT_ARGS" node12
+launch_follow "./benchmark_client $CLIENT_ARGS" node13
 sleep 2
 
 remote_kill_all "example_acceptor example_proposer benchmark_client tp_monitor example_oracle"
+
+show_proposer_log 0
+show_tp_log

@@ -46,6 +46,22 @@ function launch_background_acceptor () {
 	ssh $host "$BASEDIR/example_acceptor $a_id &> $logfile" &	
 }
 
+launch_tp_monitor () {
+	local host=$1
+	local logfile="$LOGDIR/monitor.txt"
+
+	echo "Starting monitor on host $host"
+	echo "(logs to: $logfile)"
+	ssh $host "$BASEDIR/tp_monitor &> $logfile" &	    
+}
+
+function show_tp_log () {
+    echo "*** Tail of tp_monitor log"
+    echo "*** From: $LOGDIR/monitor.txt"
+    tail -n 20 $LOGDIR/monitor.txt
+    echo
+}
+
 function launch_background_oracle () {
 	local host=$1
 	local logfile="$LOGDIR/oracle.txt"
@@ -64,6 +80,14 @@ function launch_background_proposer () {
 	echo "(logs to: $logfile)"
 	ssh $host "$BASEDIR/example_proposer $p_id &> $logfile" &
 }
+
+function show_proposer_log () {
+    echo "*** Tail of proposer $1 log"
+    echo "*** From: $LOGDIR/proposer_$1"
+    tail -n 20 $LOGDIR/proposer_$1
+    echo
+}
+
 
 CLIENT_COUNT=0;
 function launch_background_client () {
@@ -115,6 +139,6 @@ function remote_kill_all () {
             nodenum="0$i"
         fi
         echo "Killing on marco@node$nodenum"
-        ssh "marco@node$nodenum" "killall -INT $procnames"
+        ssh -o "ConnectTimeout=10" "marco@node$nodenum" "killall -INT $procnames"
     done
 }
