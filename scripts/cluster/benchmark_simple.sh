@@ -22,14 +22,14 @@ sleep 4
 launch_background_proposer 0 node07
 sleep 5
 
-CLIENT_ARGS="-m 30 -M 300 -t 3 -d 30 -c 5 -p 10"
+CLIENT_ARGS="-m 20 -M 2000 -t 2 -d 60 -c 5 -p 500"
 launch_background_client "$CLIENT_ARGS" node08
 launch_background_client "$CLIENT_ARGS" node09
 # launch_background_client "$CLIENT_ARGS" node10
 launch_background_client "$CLIENT_ARGS" node11
 launch_background_client "$CLIENT_ARGS" node12
 
-CLIENT_ARGS="$CLIENT_ARGS -s 500"
+CLIENT_ARGS="$CLIENT_ARGS -s 300"
 launch_follow "./benchmark_client $CLIENT_ARGS" node13
 sleep 2
 
