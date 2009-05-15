@@ -46,7 +46,7 @@ function launch_background_acceptor () {
 	ssh $host "$BASEDIR/example_acceptor $a_id &> $logfile" &	
 }
 
-launch_tp_monitor () {
+function launch_tp_monitor () {
 	local host=$1
 	local logfile="$LOGDIR/monitor.txt"
 

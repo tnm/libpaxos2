@@ -2,6 +2,8 @@
 #include <assert.h>
 #include <unistd.h>
 #include <sys/time.h>
+#include <signal.h>
+#include <stdlib.h>
 
 #include "event.h"
 #include "evutil.h"
@@ -58,7 +60,7 @@ void periodic_check(int sock, short event, void *arg) {
     timeval_subtract(&elapsed_time, &sample_start);
     
     //Time to print, update and reset
-    if(elapsed_time.tv_sec >= UPDATE_INTERVAL) {
+    if(elapsed_time.tv_sec >= UPDATE_INTERVAL || arg != NULL) {
         double secs, vps, kbps;
         
         //Calculate throughput for last sample
@@ -127,7 +129,16 @@ int my_custom_init() {
     return 0;
 }
 
+void handle_cltr_c (int sig) {
+	printf("Caught signal %d\n", sig);
+    periodic_check(0, 0, (void*)0xFF);
+    exit(0);
+}
+
+
 int main (int argc, char const *argv[]) {
+    signal(SIGINT, handle_cltr_c);
+    
     if (learner_init(my_deliver_fun, my_custom_init) != 0) {
         printf("Could not start the learner!\n");
         return -1;
