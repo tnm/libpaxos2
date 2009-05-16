@@ -55,6 +55,43 @@ leader_print_event_counters(int fd, short event, void *arg) {
 }
 #endif
 
+
+
+/*-------------------------------------------------------------------------*/
+// Timing routines
+/*-------------------------------------------------------------------------*/
+
+static void
+leader_set_expiration(p_inst_info * ii, unsigned int usec_interval) {
+    struct timeval current_time;
+    gettimeofday(&current_time, NULL);
+
+    struct timeval * deadline = &ii->timeout;
+    const unsigned int a_second = 1000000; 
+
+    //Set seconds
+    deadline->tv_sec = current_time.tv_sec + (usec_interval / a_second);
+    
+    //Sum microsecs
+    unsigned int usec_sum;
+    usec_sum = current_time.tv_usec + (usec_interval % a_second);
+    
+    //If sum of mircosecs exceeds 10d6, add another second
+    if(usec_sum > a_second) {
+        deadline->tv_sec += 1; 
+    }
+
+    //Set microseconds
+    deadline->tv_usec = (usec_sum % a_second);
+}
+
+static int
+leader_is_expired(struct timeval * deadline, struct timeval * time_now) {
+    return (deadline->tv_sec < time_now->tv_sec ||
+            (deadline->tv_sec == time_now->tv_sec &&
+            deadline->tv_usec < time_now->tv_usec));
+}
+
 /*-------------------------------------------------------------------------*/
 // Phase 1 routines
 /*-------------------------------------------------------------------------*/
@@ -68,6 +105,11 @@ leader_check_p1_pending() {
     sendbuf_clear(to_acceptors, prepare_reqs, this_proposer_id);
     LOG(DBG, ("Checking pending phase 1 from %lu to %lu\n",
         current_iid, p1_info.highest_open));
+    
+    //Get current time for checking expired    
+    struct timeval time_now;
+    gettimeofday(&time_now, NULL);
+    
     for(iid_iterator = current_iid; 
         iid_iterator <= p1_info.highest_open; iid_iterator++) {
 
@@ -76,7 +118,7 @@ leader_check_p1_pending() {
         assert(ii->iid == iid_iterator);
         
         //Still pending -> it's expired
-        if(ii->status == p1_pending) {
+        if(ii->status == p1_pending && leader_is_expired(&ii->timeout, &time_now)) {
             LOG(DBG, ("Phase 1 of instance %ld expired!\n", ii->iid));
 
             //Reset fields used for previous phase 1
@@ -94,7 +136,8 @@ leader_check_p1_pending() {
 
             //Send prepare to acceptors
             sendbuf_add_prepare_req(to_acceptors, ii->iid, ii->my_ballot);        
-
+            leader_set_expiration(ii, P1_TIMEOUT_INTERVAL);
+            
             COUNT_EVENT(p1_timeout);
         }
     }    
@@ -137,7 +180,8 @@ leader_open_instances_p1() {
         ii->status = p1_pending;
         ii->my_ballot = FIRST_BALLOT;
         //Send prepare to acceptors
-        sendbuf_add_prepare_req(to_acceptors, ii->iid, ii->my_ballot);        
+        sendbuf_add_prepare_req(to_acceptors, ii->iid, ii->my_ballot);
+        leader_set_expiration(ii, P1_TIMEOUT_INTERVAL);       
     }
 
     //Send if something is still there
@@ -192,30 +236,6 @@ static void leader_set_next_p2_check() {
 }
 
 static void
-leader_set_p2_expiration(p_inst_info * ii) {
-    struct timeval current_time;
-    gettimeofday(&current_time, NULL);
-
-    struct timeval * deadline = &ii->p2_timeout;
-    const unsigned int a_second = 1000000; 
-
-    //Set seconds
-    deadline->tv_sec = current_time.tv_sec + (P2_TIMEOUT_INTERVAL / a_second);
-    
-    //Sum microsecs
-    unsigned int usec_sum;
-    usec_sum = current_time.tv_usec + (P2_TIMEOUT_INTERVAL % a_second);
-    
-    //If sum of mircosecs exceeds 10d6, add another second
-    if(usec_sum > a_second) {
-        deadline->tv_sec += 1; 
-    }
-
-    //Set microseconds
-    deadline->tv_usec = (usec_sum % a_second);
-}
-
-static void
 leader_execute_p2(p_inst_info * ii) {
     
     if(ii->p1_value == NULL && ii->p2_value == NULL) {
@@ -260,7 +280,7 @@ leader_execute_p2(p_inst_info * ii) {
     sendbuf_add_accept_req(to_acceptors, ii->iid, ii->my_ballot, ii->p2_value->value, ii->p2_value->value_size);
     
     //Set the deadline for this instance
-    leader_set_p2_expiration(ii);
+    leader_set_expiration(ii, P2_TIMEOUT_INTERVAL);
 }
 
 // Scan trough p1_ready that have a value
@@ -364,13 +384,6 @@ leader_open_instances_p2_new() {
     }
 }
 
-static int
-leader_is_expired(struct timeval * deadline, struct timeval * time_now) {
-    return (deadline->tv_sec < time_now->tv_sec ||
-            (deadline->tv_sec == time_now->tv_sec &&
-            deadline->tv_usec < time_now->tv_usec));
-}
-
 static void
 leader_periodic_p2_check(int fd, short event, void *arg) {
     UNUSED_ARG(fd);
@@ -406,7 +419,7 @@ leader_periodic_p2_check(int fd, short event, void *arg) {
         }
         
         //Not expired yet, skip
-        if(!leader_is_expired(&ii->p2_timeout, &now)) {
+        if(!leader_is_expired(&ii->timeout, &now)) {
             continue;
         }
         
@@ -415,7 +428,9 @@ leader_periodic_p2_check(int fd, short event, void *arg) {
         p1_info.pending_count += 1;
         ii->my_ballot = NEXT_BALLOT(ii->my_ballot);
         //Send prepare to acceptors
-        sendbuf_add_prepare_req(to_acceptors, ii->iid, ii->my_ballot);  
+        sendbuf_add_prepare_req(to_acceptors, ii->iid, ii->my_ballot);
+        leader_set_expiration(ii, P1_TIMEOUT_INTERVAL);
+        
         LOG(VRB, ("Instance %lu restarts from phase 1\n", i));
 
         COUNT_EVENT(p2_timeout);
@@ -522,8 +537,8 @@ leader_init() {
     // checking timeouts of instances, phase 1
     evtimer_set(&p1_check_event, leader_periodic_p1_check, NULL);
     evutil_timerclear(&p1_check_interval);
-    p1_check_interval.tv_sec = (P1_TIMEOUT_INTERVAL / 1000000);
-    p1_check_interval.tv_usec = (P1_TIMEOUT_INTERVAL % 1000000);
+    p1_check_interval.tv_sec = (P1_TIMEOUT_INTERVAL/3 / 1000000);
+    p1_check_interval.tv_usec = (P1_TIMEOUT_INTERVAL/3 % 1000000);
     
     //Check pending, open new, set next timeout
     leader_periodic_p1_check(0, 0, NULL);

@@ -66,7 +66,7 @@ typedef struct proposer_instance_info {
     vh_value_wrapper * p1_value;
     ballot_t        p1_value_ballot;
     vh_value_wrapper * p2_value;
-    struct timeval  p2_timeout;
+    struct timeval  timeout;
 } p_inst_info;
 
 p_inst_info proposer_state[PROPOSER_ARRAY_SIZE];
