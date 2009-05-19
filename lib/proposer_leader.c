@@ -537,8 +537,8 @@ leader_init() {
     // checking timeouts of instances, phase 1
     evtimer_set(&p1_check_event, leader_periodic_p1_check, NULL);
     evutil_timerclear(&p1_check_interval);
-    p1_check_interval.tv_sec = (P1_TIMEOUT_INTERVAL/3 / 1000000);
-    p1_check_interval.tv_usec = (P1_TIMEOUT_INTERVAL/3 % 1000000);
+    p1_check_interval.tv_sec = 0; //(P1_TIMEOUT_INTERVAL/3 / 1000000);
+    p1_check_interval.tv_usec = 10000; //(P1_TIMEOUT_INTERVAL/3 % 1000000);
     
     //Check pending, open new, set next timeout
     leader_periodic_p1_check(0, 0, NULL);
@@ -551,8 +551,8 @@ leader_init() {
     // checking timeouts of instances, phase 2
     evtimer_set(&p2_check_event, leader_periodic_p2_check, NULL);
     evutil_timerclear(&p2_check_interval);
-    p2_check_interval.tv_sec = ((P2_TIMEOUT_INTERVAL/3) / 1000000);
-    p2_check_interval.tv_usec = ((P2_TIMEOUT_INTERVAL/3) % 1000000);
+    p2_check_interval.tv_sec = 0; //((P2_TIMEOUT_INTERVAL/3) / 1000000);
+    p2_check_interval.tv_usec = 10000; //((P2_TIMEOUT_INTERVAL/3) % 1000000);
     leader_set_next_p2_check();
     
     LOG(VRB, ("Leader is ready\n"));
