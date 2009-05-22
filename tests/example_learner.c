@@ -1,8 +1,14 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <unistd.h>
+#include <signal.h>
 
 #include "libpaxos.h"
+
+void handle_cltr_c (int sig) {
+	printf("Caught signal %d\n", sig);
+    exit(0);
+}
 
 static char as_char(char c) {
     if(c < 33 || c > 126) {
@@ -25,6 +31,9 @@ int my_custom_init() {
 }
 
 int main (int argc, char const *argv[]) {
+        
+    signal(SIGINT, handle_cltr_c);
+    
     if (learner_init(my_deliver_fun, my_custom_init) != 0) {
         printf("Could not start the learner!\n");
         exit(1);
