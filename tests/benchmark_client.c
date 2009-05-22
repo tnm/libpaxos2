@@ -5,12 +5,14 @@
 #include <sys/time.h>
 #include <unistd.h>
 #include <assert.h>
+#include <signal.h>
 
 #include "event.h"
 #include "libpaxos.h"
 
 static int start_time;
 static int end_time;
+static int force_exit = 0;
  
 static int delivered_count = 0;
 static int submitted_count = 0;
@@ -59,6 +61,11 @@ void pusage() {
     printf("\t-p N : print submit count every N values\n");
     printf("\t-s N : saves a latency sample every N values sent\n");
     printf("\t-h   : prints this message\n");    
+}
+
+void handle_cltr_c (int sig) {
+	printf("Caught signal %d\n", sig);
+    force_exit = 1;
 }
 
 void parse_args(int argc, char * const argv[]) {
@@ -347,6 +354,8 @@ void cl_deliver(char* value, size_t val_size, iid_t iid, ballot_t ballot, int pr
 
 int main (int argc, char const *argv[]) {
     
+    signal(SIGINT, handle_cltr_c);
+
     parse_args(argc, (char **)argv);
     
     start_time = time(NULL);
@@ -374,8 +383,8 @@ int main (int argc, char const *argv[]) {
     }
     
     //Wait until benchmark time expires, then exit
-    while(time(NULL) < end_time) {
-        sleep(10);
+    while(!force_exit && time(NULL) < end_time) {
+        sleep(1);
     }    
     
     printf("Total delivered:%u\n", delivered_count);
