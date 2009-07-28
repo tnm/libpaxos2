@@ -267,7 +267,7 @@ lea_hole_check(int fd, short event, void *arg) {
     //Periodic check for missing instances
     //(i.e. i+1 closed, but i not closed yet)
     if (highest_iid_seen > current_iid + LEARNER_ARRAY_SIZE) {
-        LOG(VRB, ("This learner is lagging behind!!!, highest seen:%lu, highest delivered:%lu\n", 
+        LOG(0, ("This learner is lagging behind!!!, highest seen:%lu, highest delivered:%lu\n", 
             highest_iid_seen, current_iid-1));
         lea_send_repeat_request(current_iid, highest_iid_seen);
     } else if(highest_iid_closed > current_iid) {

@@ -551,8 +551,8 @@ leader_init() {
     // checking timeouts of instances, phase 2
     evtimer_set(&p2_check_event, leader_periodic_p2_check, NULL);
     evutil_timerclear(&p2_check_interval);
-    p2_check_interval.tv_sec = 0; //((P2_TIMEOUT_INTERVAL/3) / 1000000);
-    p2_check_interval.tv_usec = 10000; //((P2_TIMEOUT_INTERVAL/3) % 1000000);
+    p2_check_interval.tv_sec = (((int)P2_CHECK_INTERVAL) / 1000000);
+    p2_check_interval.tv_usec = ((P2_CHECK_INTERVAL) % 1000000);
     leader_set_next_p2_check();
     
     LOG(VRB, ("Leader is ready\n"));

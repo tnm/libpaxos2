@@ -293,6 +293,7 @@ udp_send_buffer * udp_sendbuf_new(char* address_string, int port) {
     addr_p->sin_port = htons((uint16_t)port);	
     // addrlen = sizeof(struct sockaddr_in);
     
+#ifdef PAXOS_UDP_SEND_NONBLOCK
     // Set non-blocking 
     int flag = fcntl(sb->sock, F_GETFL);
     if(flag < 0) {
@@ -304,7 +305,8 @@ udp_send_buffer * udp_sendbuf_new(char* address_string, int port) {
         perror("fcntl2");
         return NULL;
     }
-    
+#endif
+
     LOG(DBG, ("Socket %d created for address %s:%d (send mode)\n", sb->sock, address_string, port));
     return sb;
 }

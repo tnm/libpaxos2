@@ -11,7 +11,7 @@
     Should be a multiple of PROPOSER_P2_CONCURRENCY (double or more)
     MUST be less than PROPOSER_ARRAY_SIZE (half or less)
 */
-#define PROPOSER_PREEXEC_WIN_SIZE 80
+#define PROPOSER_PREEXEC_WIN_SIZE 300
 
 /* 
     Number of instances that are concurrently opened by the leader.
@@ -20,7 +20,7 @@
     If more than 1, FIFO order of values is not granted.
     MUST be smaller than PROPOSER_PREEXEC_WIN_SIZE (half or less)
 */
-#define PROPOSER_P2_CONCURRENCY 15
+#define PROPOSER_P2_CONCURRENCY 3
 
 /* 
     The timeout for prepare requests. If too high, the leader takes a while
@@ -32,7 +32,7 @@
     the latency of the network.
     Unit is microseconds - i.e. 1500000 = 1.5 secs
 */
-#define P1_TIMEOUT_INTERVAL 1000000
+#define P1_TIMEOUT_INTERVAL 30000
 
 /* 
     The timeout for accept requests. If too high, the leader takes a while
@@ -44,7 +44,14 @@
     the latency of the network.
     Unit is microseconds - i.e. 1500000 = 1.5 secs
 */
-#define P2_TIMEOUT_INTERVAL 3000000
+#define P2_TIMEOUT_INTERVAL 35000
+
+/* 
+    How frequently should the leader proposer try to open new instances.
+    (P2 execution does not rely exclusively on this peridic check, 
+    new ones are opened also when some old instance is closed/delivered).
+    Unit is microseconds - i.e. 1000 = 1ms */
+#define P2_CHECK_INTERVAL 1000
 
 /* 
     The maximum number of proposers must be fixed beforehand
@@ -86,7 +93,7 @@
     This is useful to keep the learners updated in very low-traffic 
     situations.
 */
-#define ACCEPTOR_REPEAT_INTERVAL 5
+#define ACCEPTOR_REPEAT_INTERVAL 3
 
 /*
     Periodically the learner checks for "holes": that is cases where
@@ -97,14 +104,14 @@
     Unit is microseconds - i.e. 1500000 = 1.5 secs
 
 */
-#define LEARNER_HOLECHECK_INTERVAL 2000000
+#define LEARNER_HOLECHECK_INTERVAL 500000
 
 /*
     The maximum size of the pending list of values in the leader proposer.
     It has to be limited since client my retry to submit too early, if they send 
     at a rate higher than the proposer can digest, the list grows to infinity
 */
-#define LEADER_MAX_QUEUE_LENGTH 500
+#define LEADER_MAX_QUEUE_LENGTH 50
 
 
 /*** FAILURE DETECTOR SETTINGS ***/
@@ -169,7 +176,7 @@
   Maximum size of UDP messages for the current network and host OS.
   Check carefully, if not set properly, message send will fail.
 */
-#define MAX_UDP_MSG_SIZE 6700
+#define MAX_UDP_MSG_SIZE 7500
 
 /* 
   Multicast <address, port> for the respective groups
@@ -184,6 +191,12 @@
 #define PAXOS_ORACLE_NET    "239.4.0.1", 6005
 #define PAXOS_PINGS_NET     "239.5.0.1", 6006
 
+/*
+  If defined, UDP sockets created (to send) are non-blocking.
+  The send call may return before data is actually transmitted.
+  Comment the definition below to make the send blocking.
+*/
+// #define PAXOS_UDP_SEND_NONBLOCK
 
 /*** STRUCTURES SETTINGS ***/
 
@@ -192,14 +205,14 @@
   MUST be bigger than PROPOSER_PREEXEC_WIN_SIZE (double or more)
   MUST be a power of 2
 */
-#define PROPOSER_ARRAY_SIZE 512
+#define PROPOSER_ARRAY_SIZE 2048
 
 /* 
   Size of the in-meory table of instances for the learner.
   MUST be bigger than PROPOSER_PREEXEC_WIN_SIZE (double or more)
   MUST be a power of 2
 */
-#define LEARNER_ARRAY_SIZE 512
+#define LEARNER_ARRAY_SIZE 2048
 
 
 /*** DEBUGGING SETTINGS ***/
