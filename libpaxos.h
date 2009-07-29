@@ -105,5 +105,6 @@ paxos_submit_handle * pax_submit_handle_init();
 */
 int pax_submit_nonblock(paxos_submit_handle * h, char * value, size_t val_size);
 
+void pax_submit_sharedmem(char* value, size_t val_size);
 
 #endif /* _LIBPAXOS_H_ */

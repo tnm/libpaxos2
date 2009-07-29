@@ -2,6 +2,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <assert.h>
+#include <pthread.h>
 
 #include "event.h"
 #include "libpaxos.h"
@@ -16,6 +17,8 @@ static long unsigned int dropped_count = 0;
 
 static struct event leader_msg_event;
 static udp_receiver * for_leader;
+
+static pthread_mutex_t pending_list_lock = PTHREAD_MUTEX_INITIALIZER;
 
 vh_value_wrapper * 
 vh_wrap_value(char * value, size_t size) {
@@ -105,17 +108,26 @@ vh_shutdown() {
 
 
 int vh_pending_list_size() {
-    return vh_list_size;
+    pthread_mutex_lock(&pending_list_lock);
+    int ls = vh_list_size;
+    pthread_mutex_unlock(&pending_list_lock);
+    return ls;
 }
 
 long unsigned int vh_get_dropped_count() {
-    return dropped_count;
+    pthread_mutex_lock(&pending_list_lock);
+    int dc = dropped_count;
+    pthread_mutex_unlock(&pending_list_lock);
+    return dc;
 }
 
 void vh_enqueue_value(char * value, size_t value_size) {
+    
+    pthread_mutex_lock(&pending_list_lock);
     //Create wrapper
     
     if(vh_list_size > LEADER_MAX_QUEUE_LENGTH) {
+        pthread_mutex_unlock(&pending_list_lock);
         LOG(VRB, ("Value dropped, list is already too long\n"));
 #ifdef LEADER_EVENTS_UPDATE_INTERVAL
         dropped_count += 1;
@@ -137,13 +149,17 @@ void vh_enqueue_value(char * value, size_t value_size) {
 		vh_list_tail = new_vw;
         vh_list_size += 1;
 	}
+    pthread_mutex_unlock(&pending_list_lock);
     LOG(DBG, ("Value of size %lu enqueued\n", value_size));
 }
 
 vh_value_wrapper * 
 vh_get_next_pending() {
+    pthread_mutex_lock(&pending_list_lock);
+    
     /* List is empty*/
 	if (vh_list_head == NULL && vh_list_tail == NULL) {
+        pthread_mutex_unlock(&pending_list_lock);
         return NULL;
     }
     
@@ -156,12 +172,16 @@ vh_get_next_pending() {
         vh_list_tail = NULL;
     }
     vh_list_size -= 1;
+    pthread_mutex_unlock(&pending_list_lock);
+
     LOG(DBG, ("Popping value of size %lu\n", first_vw->value_size));
     return first_vw;
 }
 
 void 
 vh_push_back_value(vh_value_wrapper * vw) {
+    pthread_mutex_lock(&pending_list_lock);
+
     /* Adds as list head*/
     vw->next = vh_list_head;
     
@@ -176,6 +196,7 @@ vh_push_back_value(vh_value_wrapper * vw) {
 		vh_list_head = vw;
         vh_list_size += 1;
 	}
+    pthread_mutex_unlock(&pending_list_lock);
 }
 
 void vh_notify_client(unsigned int result, vh_value_wrapper * vw) {
@@ -187,4 +208,8 @@ void vh_notify_client(unsigned int result, vh_value_wrapper * vw) {
     } else {
         LOG(DBG, ("Notify client -> Submit successful\n"));
     }
+}
+
+void pax_submit_sharedmem(char* value, size_t val_size) {
+    vh_enqueue_value(value, val_size);
 }
