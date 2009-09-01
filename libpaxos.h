@@ -86,6 +86,18 @@ int acceptor_exit();
 int proposer_init(int proposer_id);
 
 /*
+    Like proposer_init with a custom initialization function.
+    Allows to start custom behavior on top of the proposer libevent loop.
+    proposer_id -> Must be in the range [0...(MAX_N_OF_PROPOSERS-1)]
+    cif -> A custom_init_function invoked by the internal libevent thread, 
+           invoked when the normal proposer initialization is completed
+           Can be used to add other events to the existing event loop.
+           It's ok to pass NULL if you don't need it.
+           cif has to return -1 for error and 0 for success    
+*/
+int proposer_init_cif(int proposer_id, custom_init_function cif);
+
+/*
     This is returned to the when creating a new submit handle
 */
 typedef struct paxos_submit_handle_t {

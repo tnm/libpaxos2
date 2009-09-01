@@ -349,6 +349,13 @@ leader_open_instances_p2_new() {
         ii = GET_PRO_INSTANCE(p2_info.next_unused_iid);
         assert(ii->p2_value == NULL);
         
+        //No value to send for next unused, stop
+        if(ii->p1_value == NULL &&
+            vh_pending_list_size() == 0) {
+                LOG(DBG, ("No value to use for next instance\n"));
+                break;
+        }
+        
         //Next unused is not ready, stop
         if(ii->status != p1_ready || ii->iid != p2_info.next_unused_iid) {
             LOG(DBG, ("Next instance to use for P2 (iid:%lu) is not ready yet\n", p2_info.next_unused_iid));
@@ -356,12 +363,6 @@ leader_open_instances_p2_new() {
             break;
         }
 
-        //No value to send for next unused, stop
-        if(ii->p1_value == NULL &&
-            vh_pending_list_size() == 0) {
-                LOG(DBG, ("No value to use for next instance\n"));
-                break;
-        }
 
         //Executes phase2, sending an accept request
         //Using the found value or getting the next from list

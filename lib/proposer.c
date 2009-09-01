@@ -91,6 +91,9 @@ struct phase2_info p2_info;
 //Required by leader
 static void pro_clear_instance_info(p_inst_info * ii);
 
+//Custom function that allows app on top of proposer to add libevent events
+static custom_init_function client_custom_init = NULL;
+
 #include "proposer_leader.c"
 
 /*-------------------------------------------------------------------------*/
@@ -458,6 +461,15 @@ static int init_proposer() {
             return -1;
         }
     }
+    
+    //Call custom init (i.e. to register additional events)
+    if(client_custom_init != NULL && client_custom_init() != 0) {
+        printf("Error in client_custom_init\n");
+        return -1;
+    } else {
+        LOG(DBG, ("Custom init completed\n"));
+    }
+
     return 0;
 }
 /*-------------------------------------------------------------------------*/
@@ -483,4 +495,9 @@ int proposer_init(int proposer_id) {
 
     LOG(VRB, ("Proposer is ready\n"));
     return 0;
+}
+
+int proposer_init_cif(int proposer_id, custom_init_function cif) {
+    client_custom_init = cif;
+    return proposer_init(proposer_id);
 }
