@@ -5,6 +5,7 @@
 
 /* 
     The maximum size that can be submitted by a client.
+    Set MAX_UDP_MSG_SIZE in config file to reflect your network MTU.
     Max packet size minus largest header possible
     (should be accept_ack_batch+accept_ack, around 30 bytes)
 */
