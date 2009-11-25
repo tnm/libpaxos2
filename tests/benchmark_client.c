@@ -38,6 +38,7 @@ int min_val_size = 30;
 int max_val_size = PAXOS_MAX_VALUE_SIZE;
 int duration = 40;
 int print_step = 10;
+int wait_after_init=0;
 struct timeval values_timeout;
 
 //Latency statistics
@@ -60,6 +61,7 @@ void pusage() {
     printf("\t-t N : submit timeout is N seconds\n");
     printf("\t-p N : print submit count every N values\n");
     printf("\t-s N : saves a latency sample every N values sent\n");
+    printf("\t-w N : after initialization is completed, wait N seconds before submitting\n");
     printf("\t-h   : prints this message\n");    
 }
 
@@ -69,11 +71,9 @@ void handle_cltr_c (int sig) {
 }
 
 void parse_args(int argc, char * const argv[]) {
-    values_timeout.tv_sec = 10;
-    values_timeout.tv_usec = 0;
 
     int c;
-    while((c = getopt(argc, argv, "c:m:M:d:t:p:s:h")) != -1) {
+    while((c = getopt(argc, argv, "c:m:M:d:t:p:s:w:h")) != -1) {
         switch(c) {
             case 'c': {
                 concurrent_values = atoi(optarg);
@@ -111,6 +111,12 @@ void parse_args(int argc, char * const argv[]) {
             }
             break;
             
+            case 'w': {
+                wait_after_init = atoi(optarg);
+            }
+            break;
+
+            
             case 'h':
             default: {
                 pusage();
@@ -118,6 +124,18 @@ void parse_args(int argc, char * const argv[]) {
             }
         }
     }    
+}
+
+static void
+print_benchmark_parameters () {
+    printf("sample_frequency set to: %d\n", sample_frequency);
+    printf("print_step set to: %d\n", print_step);
+    printf("values_timeout set to: %d\n", (int)values_timeout.tv_sec);
+    printf("concurrent_values set to: %d\n", concurrent_values);
+    printf("min_val_size set to: %d\n", min_val_size);
+    printf("max_val_size set to: %d\n", max_val_size);
+    printf("duration set to: %d\n", duration);
+    printf("Initial submission delay set to: %d\n", wait_after_init);   
 }
 
 static void 
@@ -236,6 +254,8 @@ submit_new_value(client_value_record * cvr) {
     submitted_count += 1;
     if((submitted_count % print_step) == 0) {
         printf("Submitted %u values\n", submitted_count);
+        printf("%d %% %d = %d\n", submitted_count, print_step, (submitted_count % print_step));
+
     }
     
     cvr->value_size = random_value_gen(cvr->value);
@@ -311,6 +331,10 @@ int cl_init() {
         return -1;
     }
     
+    if(wait_after_init > 0) {
+        sleep(wait_after_init);
+    }
+    
     //Submit N new values
     unsigned int i;
     for(i = 0; i < concurrent_values; i++) {
@@ -356,14 +380,16 @@ int main (int argc, char const *argv[]) {
     
     signal(SIGINT, handle_cltr_c);
 
+    //Default timeout for values
+    values_timeout.tv_sec = 5;
+    values_timeout.tv_usec = 0;
+
     parse_args(argc, (char **)argv);
+    print_benchmark_parameters();
     
     start_time = time(NULL);
     end_time = start_time + duration;
     
-    //Default timeout for values
-    values_timeout.tv_sec = 5;
-    values_timeout.tv_usec = 0;
     
     //Default timeout check interval
     cl_periodic_interval.tv_sec = 3;
